@@ -1,0 +1,676 @@
+<title>FutOdds — Contracts</title>
+<style>
+  :root {
+    --bg: #0B0F1A;
+    --surface: #151B2B;
+    --border: #253049;
+    --text: #C8D1E0;
+    --text-dim: #5E6B82;
+    --text-bright: #EDF1F7;
+    --accent: #34D399;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #F7F9FC; --surface: #FFFFFF; --border: #DFE4ED;
+      --text: #3B4459; --text-dim: #8C95A8; --text-bright: #111827; --accent: #059669;
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #F7F9FC; --surface: #FFFFFF; --border: #DFE4ED;
+    --text: #3B4459; --text-dim: #8C95A8; --text-bright: #111827; --accent: #059669;
+  }
+  :root[data-theme="dark"] {
+    --bg: #0B0F1A; --surface: #151B2B; --border: #253049;
+    --text: #C8D1E0; --text-dim: #5E6B82; --text-bright: #EDF1F7; --accent: #34D399;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    overflow-y: scroll !important; overflow-x: hidden;
+    min-height: 100%; height: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    line-height: 1.6; padding: 0 1.5rem 2.5rem; max-width: 960px; margin: 0 auto;
+  }
+
+  /* === NAV TABS === */
+  .tabs {
+    display: flex; gap: 0; margin-bottom: 2rem;
+    border-bottom: 2px solid var(--border);
+    position: sticky; top: 0; z-index: 10;
+    background: var(--bg); padding-top: 1.5rem;
+  }
+  .tab {
+    padding: 0.6rem 1.2rem; font-size: 0.8rem; font-weight: 600;
+    color: var(--text-dim); text-decoration: none;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px; transition: all 0.15s;
+    letter-spacing: 0.03em;
+  }
+  .tab:hover { color: var(--text-bright); }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  h1 { font-size: 1.6rem; font-weight: 700; color: var(--text-bright); text-align: center; letter-spacing: -0.03em; }
+  h1 span { color: var(--accent); }
+  .subtitle { text-align: center; color: var(--text-dim); font-size: 0.85rem; margin-bottom: 2.5rem; }
+
+  h2 {
+    font-size: 0.95rem; font-weight: 700; color: var(--text-bright);
+    text-transform: uppercase; letter-spacing: 0.08em;
+    margin: 3rem 0 0.5rem; padding-bottom: 0.4rem;
+    border-bottom: 2px solid var(--accent); display: inline-block;
+  }
+  h2 + p { color: var(--text-dim); font-size: 0.8rem; margin-bottom: 1rem; }
+
+  h3 {
+    font-size: 0.85rem; font-weight: 700; color: var(--text-bright);
+    margin: 1.5rem 0 0.5rem;
+  }
+
+  .diagram-wrapper {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 1.5rem; margin: 1rem 0 2rem;
+    overflow-x: auto;
+  }
+  .diagram-wrapper pre.mermaid { display: flex; justify-content: center; }
+
+  .note {
+    background: var(--surface); border-left: 3px solid var(--accent);
+    border-radius: 0 8px 8px 0; padding: 0.8rem 1rem;
+    font-size: 0.78rem; color: var(--text); margin: 1rem 0;
+  }
+  .note strong { color: var(--text-bright); }
+  .note.warn { border-left-color: #FBBF24; }
+  .note.danger { border-left-color: #F87171; }
+
+  pre.code {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 1rem 1.25rem; margin: 1rem 0;
+    font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+    font-size: 0.75rem; line-height: 1.8; overflow-x: auto;
+    color: var(--text);
+  }
+  pre.code .kw { color: #C792EA; }
+  pre.code .ty { color: #82AAFF; }
+  pre.code .fn { color: #34D399; }
+  pre.code .cm { color: #5E6B82; }
+  pre.code .st { color: #C3E88D; }
+  pre.code .num { color: #F78C6C; }
+
+  table {
+    width: 100%; border-collapse: collapse; margin: 1rem 0;
+    font-size: 0.78rem;
+  }
+  th {
+    text-align: left; padding: 0.5rem 0.75rem;
+    background: var(--surface); color: var(--text-bright);
+    border-bottom: 2px solid var(--border);
+    font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em;
+  }
+  td {
+    padding: 0.45rem 0.75rem; border-bottom: 1px solid var(--border);
+    font-variant-numeric: tabular-nums;
+  }
+  td code {
+    font-family: "SF Mono", "Fira Code", monospace; font-size: 0.72rem;
+    background: var(--bg); padding: 0.1em 0.35em; border-radius: 4px;
+    color: var(--text-bright);
+  }
+  tr:last-child td { border-bottom: none; }
+
+  footer {
+    text-align: center; margin-top: 3rem; padding-top: 1.5rem;
+    border-top: 1px solid var(--border);
+    color: var(--text-dim); font-size: 0.7rem;
+    text-transform: uppercase; letter-spacing: 0.06em;
+  }
+</style>
+
+<nav class="tabs">
+  <a class="tab" href="https://claude.ai/code/artifact/f839c2ba-06fe-4377-bb85-1dec0ade528d" target="_top">System Overview</a>
+  <a class="tab active">Contracts</a>
+</nav>
+
+<h1>Fut<span>Odds</span> — Smart Contracts</h1>
+<p class="subtitle">Anchor programs on Solana — 3 programs, 4 PDAs, 11 instructions</p>
+
+<!-- ======================================== -->
+<h2>1 — Programs & CPI Map</h2>
+<p>Os 3 programs e como se chamam entre si via CPI.</p>
+
+<div class="diagram-wrapper">
+<pre class="mermaid">
+graph LR
+  subgraph Programs
+    ORA["OracleAdapter\n─────────────\nupdate_odds()\npush_event()"]
+    BET["BettingEngine\n─────────────\nplace_bet()\nsettle_bet()\ncancel_bet()"]
+    POOL["LiquidityPool\n─────────────\ncreate_pool()\ndeposit()\nwithdraw()\nclaim_fees()"]
+  end
+
+  BE["Backend\n(authority)"] -- "signer" --> ORA
+  BE -- "signer" --> BET
+
+  ORA -- "CPI: read odds" --> BET
+  BET -- "CPI: lock/unlock" --> POOL
+  BET -- "CPI: transfer USDC" --> POOL
+
+  USER["User\n(wallet)"] -- "signer" --> BET
+  LP["LP\n(wallet)"] -- "signer" --> POOL
+</pre>
+</div>
+
+<div class="note">
+  <strong>Authority pattern:</strong> OracleAdapter e settle_bet só aceitam txs assinadas pela keypair do backend. O user nunca interage direto com o oracle.
+</div>
+
+<!-- ======================================== -->
+<h2>2 — PDA Derivation</h2>
+<p>Seeds usadas para derivar cada account.</p>
+
+<table>
+  <tr>
+    <th>PDA</th>
+    <th>Seeds</th>
+    <th>Criado por</th>
+  </tr>
+  <tr>
+    <td><code>Match</code></td>
+    <td><code>"match"</code> + <code>match_id</code></td>
+    <td><code>OracleAdapter::update_odds</code> (init_if_needed)</td>
+  </tr>
+  <tr>
+    <td><code>LiquidityPool</code></td>
+    <td><code>"pool"</code> + <code>match_id</code></td>
+    <td><code>LiquidityPool::create_pool</code></td>
+  </tr>
+  <tr>
+    <td><code>Bet</code></td>
+    <td><code>"bet"</code> + <code>match_id</code> + <code>user</code> + <code>nonce</code></td>
+    <td><code>BettingEngine::place_bet</code></td>
+  </tr>
+  <tr>
+    <td><code>Vault</code></td>
+    <td><code>"vault"</code> + <code>match_id</code></td>
+    <td><code>LiquidityPool::create_pool</code> (token account)</td>
+  </tr>
+</table>
+
+<!-- ======================================== -->
+<h2>3 — Account Schemas</h2>
+<p>Tamanho e layout de cada account on-chain.</p>
+
+<div class="diagram-wrapper">
+<pre class="mermaid">
+classDiagram
+  class Match {
+    discriminator: 8 bytes
+    ──────────────
+    match_id: String [36]
+    sport: u8
+    team_home: String [32]
+    team_away: String [32]
+    status: u8
+    odds_home: u16
+    odds_away: u16
+    odds_draw: u16
+    odds_timestamp: i64
+    pool: Pubkey [32]
+    bump: u8
+    ──────────────
+    ~175 bytes
+  }
+
+  class LiquidityPool {
+    discriminator: 8 bytes
+    ──────────────
+    match_id: String [36]
+    authority: Pubkey [32]
+    vault: Pubkey [32]
+    total_liquidity: u64
+    locked_liquidity: u64
+    exposure_up: u64
+    exposure_down: u64
+    fee_rate: u16
+    total_shares: u64
+    num_lps: u32
+    bump: u8
+    ──────────────
+    ~210 bytes
+  }
+
+  class LpPosition {
+    discriminator: 8 bytes
+    ──────────────
+    owner: Pubkey [32]
+    pool: Pubkey [32]
+    shares: u64
+    deposited_at: i64
+    bump: u8
+    ──────────────
+    ~89 bytes
+  }
+
+  class Bet {
+    discriminator: 8 bytes
+    ──────────────
+    user: Pubkey [32]
+    match_pda: Pubkey [32]
+    direction: u8
+    market: u8
+    odds_at_entry: u16 × 3
+    amount: u64
+    payout: u64
+    window_secs: u32
+    created_at: i64
+    expires_at: i64
+    status: u8
+    nonce: u32
+    bump: u8
+    ──────────────
+    ~135 bytes
+  }
+
+  LiquidityPool "1" --> "*" LpPosition : tracks each LP
+  Match "1" --> "1" LiquidityPool : has pool
+  Match "1" --> "*" Bet : has bets
+</pre>
+</div>
+
+<div class="note warn">
+  <strong>Rent:</strong> Match ~175B = 0.0024 SOL, Pool ~210B = 0.0027 SOL, Bet ~135B = 0.0020 SOL. LpPosition separada do Pool pra evitar realloc com Vec.
+</div>
+
+<!-- ======================================== -->
+<h2>4 — Instructions Detail</h2>
+
+<h3>OracleAdapter</h3>
+
+<pre class="code"><span class="cm">// Signer: backend authority ONLY</span>
+
+<span class="kw">pub fn</span> <span class="fn">update_odds</span>(
+    ctx: <span class="ty">Context</span>&lt;UpdateOdds&gt;,
+    match_id: <span class="ty">String</span>,
+    odds_home: <span class="ty">u16</span>,      <span class="cm">// 6500 = 65.00%</span>
+    odds_away: <span class="ty">u16</span>,      <span class="cm">// 3000 = 30.00%</span>
+    odds_draw: <span class="ty">u16</span>,      <span class="cm">// 500  = 5.00%</span>
+    sport: <span class="ty">u8</span>,
+    team_home: <span class="ty">String</span>,
+    team_away: <span class="ty">String</span>,
+) -> <span class="ty">Result</span>&lt;()&gt;
+<span class="cm">// init_if_needed: cria Match PDA se não existe</span>
+<span class="cm">// atualiza odds + timestamp no Match existente</span>
+
+<span class="kw">pub fn</span> <span class="fn">push_event</span>(
+    ctx: <span class="ty">Context</span>&lt;PushEvent&gt;,
+    match_id: <span class="ty">String</span>,
+    event_type: <span class="ty">u8</span>,      <span class="cm">// 0=goal, 1=card, 2=corner</span>
+    team: <span class="ty">u8</span>,            <span class="cm">// 0=home, 1=away</span>
+    minute: <span class="ty">u16</span>,
+) -> <span class="ty">Result</span>&lt;()&gt;
+<span class="cm">// V2: usado para mercados de eventos (gol, cartão)</span></pre>
+
+<h3>LiquidityPool</h3>
+
+<pre class="code"><span class="cm">// Signer: backend authority</span>
+<span class="kw">pub fn</span> <span class="fn">create_pool</span>(
+    ctx: <span class="ty">Context</span>&lt;CreatePool&gt;,
+    match_id: <span class="ty">String</span>,
+    fee_rate: <span class="ty">u16</span>,       <span class="cm">// 200 = 2.00%</span>
+) -> <span class="ty">Result</span>&lt;()&gt;
+<span class="cm">// cria Pool PDA + Vault (USDC token account)</span>
+
+<span class="cm">// Signer: LP wallet</span>
+<span class="kw">pub fn</span> <span class="fn">deposit</span>(
+    ctx: <span class="ty">Context</span>&lt;Deposit&gt;,
+    amount: <span class="ty">u64</span>,
+) -> <span class="ty">Result</span>&lt;()&gt;
+<span class="cm">// transfer USDC user → vault</span>
+<span class="cm">// mint shares pro-rata: shares = amount * total_shares / total_liquidity</span>
+<span class="cm">// cria ou atualiza LpPosition PDA</span>
+
+<span class="kw">pub fn</span> <span class="fn">withdraw</span>(
+    ctx: <span class="ty">Context</span>&lt;Withdraw&gt;,
+    shares: <span class="ty">u64</span>,
+) -> <span class="ty">Result</span>&lt;()&gt;
+<span class="cm">// amount = shares * total_liquidity / total_shares</span>
+<span class="cm">// require!(amount <= total_liquidity - locked_liquidity)</span>
+<span class="cm">// transfer USDC vault → user, burn shares</span>
+
+<span class="kw">pub fn</span> <span class="fn">claim_fees</span>(
+    ctx: <span class="ty">Context</span>&lt;ClaimFees&gt;,
+) -> <span class="ty">Result</span>&lt;()&gt;
+<span class="cm">// calcula fee acumulado pro-rata pelas shares</span>
+<span class="cm">// transfer USDC vault → LP</span></pre>
+
+<h3>BettingEngine</h3>
+
+<pre class="code"><span class="cm">// Signer: user wallet</span>
+<span class="kw">pub fn</span> <span class="fn">place_bet</span>(
+    ctx: <span class="ty">Context</span>&lt;PlaceBet&gt;,
+    direction: <span class="ty">u8</span>,       <span class="cm">// 0=Up, 1=Down</span>
+    window_secs: <span class="ty">u32</span>,    <span class="cm">// 60, 300, 600, 1200</span>
+    amount: <span class="ty">u64</span>,
+) -> <span class="ty">Result</span>&lt;()&gt;</pre>
+
+<div class="diagram-wrapper">
+<pre class="mermaid">
+sequenceDiagram
+  participant User
+  participant BET as BettingEngine
+  participant Match
+  participant POOL as LiquidityPool
+  participant VAULT as Vault (USDC)
+
+  User->>BET: place_bet(Up, 300s, 100_000_000)
+
+  BET->>Match: read current_odds
+  Match-->>BET: home=6500, away=3000
+
+  BET->>BET: fee = amount * fee_rate / 10000
+  BET->>BET: effective = amount - fee
+
+  BET->>POOL: read exposure_up, exposure_down, total_liquidity
+  BET->>BET: calc payout = eff * (1 + opp_total / (same_total + eff))
+
+  BET->>BET: new_exposure = |exposure_up + payout - exposure_down|
+  BET->>BET: require!(new_exposure < total_liq * 80 / 100)
+
+  BET->>VAULT: transfer_checked(user_ata → vault, amount)
+  BET->>POOL: locked_liquidity += payout
+  BET->>POOL: exposure_up += payout
+
+  BET->>BET: create Bet PDA {odds_entry, payout, expires_at}
+  BET-->>User: ✅ Bet created
+</pre>
+</div>
+
+<pre class="code"><span class="cm">// Signer: backend authority</span>
+<span class="kw">pub fn</span> <span class="fn">settle_bet</span>(
+    ctx: <span class="ty">Context</span>&lt;SettleBet&gt;,
+    odds_at_expiry_home: <span class="ty">u16</span>,
+    odds_at_expiry_away: <span class="ty">u16</span>,
+) -> <span class="ty">Result</span>&lt;()&gt;</pre>
+
+<div class="diagram-wrapper">
+<pre class="mermaid">
+sequenceDiagram
+  participant CRON as Backend Cron
+  participant BET as BettingEngine
+  participant POOL as LiquidityPool
+  participant VAULT as Vault
+  participant User
+
+  CRON->>BET: settle_bet(bet_id, expiry_home=6700, expiry_away=2800)
+
+  BET->>BET: load Bet PDA
+  BET->>BET: require!(status == Open)
+  BET->>BET: require!(now >= expires_at)
+
+  BET->>BET: entry_home=6500, expiry_home=6700
+  BET->>BET: movement = expiry_home - entry_home = +200
+
+  alt direction=Up AND movement > 0 → WON
+    BET->>BET: status = Won
+    BET->>VAULT: transfer payout → user ATA
+    VAULT-->>User: 💰 payout USDC
+    BET->>POOL: locked -= payout
+    BET->>POOL: exposure_up -= payout
+  else direction=Up AND movement <= 0 → LOST
+    BET->>BET: status = Lost
+    BET->>POOL: locked -= payout
+    BET->>POOL: exposure_up -= payout
+    Note over POOL: USDC stays in vault → LPs profit
+  end
+
+  BET->>POOL: distribute fee to LP shares
+</pre>
+</div>
+
+<pre class="code"><span class="cm">// Signer: user wallet (antes de expirar) ou backend authority</span>
+<span class="kw">pub fn</span> <span class="fn">cancel_bet</span>(
+    ctx: <span class="ty">Context</span>&lt;CancelBet&gt;,
+) -> <span class="ty">Result</span>&lt;()&gt;
+<span class="cm">// require!(status == Open)</span>
+<span class="cm">// require!(now < expires_at) — só cancela antes de expirar</span>
+<span class="cm">// refund: vault → user (amount - cancellation_fee)</span>
+<span class="cm">// unlock liquidity, adjust exposure</span></pre>
+
+<!-- ======================================== -->
+<h2>5 — Validations & Guards</h2>
+<p>Checagens em cada instruction.</p>
+
+<table>
+  <tr><th>Instruction</th><th>Guards</th></tr>
+  <tr>
+    <td><code>update_odds</code></td>
+    <td>
+      Signer == authority<br>
+      odds_home + odds_away + odds_draw == 10000<br>
+      match.status != Settled
+    </td>
+  </tr>
+  <tr>
+    <td><code>place_bet</code></td>
+    <td>
+      match.status == Live<br>
+      window ∈ {60, 300, 600, 1200}<br>
+      amount >= MIN_BET (1 USDC)<br>
+      amount <= MAX_BET (1000 USDC)<br>
+      net_exposure + payout < 80% pool<br>
+      user has enough USDC
+    </td>
+  </tr>
+  <tr>
+    <td><code>settle_bet</code></td>
+    <td>
+      Signer == authority<br>
+      bet.status == Open<br>
+      clock.unix_timestamp >= bet.expires_at
+    </td>
+  </tr>
+  <tr>
+    <td><code>deposit</code></td>
+    <td>
+      match.status != Settled<br>
+      amount >= MIN_DEPOSIT (100 USDC)
+    </td>
+  </tr>
+  <tr>
+    <td><code>withdraw</code></td>
+    <td>
+      shares <= lp_position.shares<br>
+      redeemable <= total_liquidity - locked_liquidity
+    </td>
+  </tr>
+  <tr>
+    <td><code>cancel_bet</code></td>
+    <td>
+      bet.status == Open<br>
+      clock.unix_timestamp < bet.expires_at<br>
+      signer == bet.user OR signer == authority
+    </td>
+  </tr>
+</table>
+
+<!-- ======================================== -->
+<h2>6 — Error Codes</h2>
+
+<pre class="code"><span class="kw">#[error_code]</span>
+<span class="kw">pub enum</span> <span class="ty">FutOddsError</span> {
+    <span class="cm">#[msg("Unauthorized signer")]</span>
+    Unauthorized,              <span class="cm">// 6000</span>
+    <span class="cm">#[msg("Match is not live")]</span>
+    MatchNotLive,              <span class="cm">// 6001</span>
+    <span class="cm">#[msg("Invalid time window")]</span>
+    InvalidWindow,             <span class="cm">// 6002</span>
+    <span class="cm">#[msg("Bet amount below minimum")]</span>
+    BetTooSmall,               <span class="cm">// 6003</span>
+    <span class="cm">#[msg("Bet amount above maximum")]</span>
+    BetTooLarge,               <span class="cm">// 6004</span>
+    <span class="cm">#[msg("Pool exposure limit exceeded")]</span>
+    ExposureLimitExceeded,     <span class="cm">// 6005</span>
+    <span class="cm">#[msg("Insufficient liquidity for withdrawal")]</span>
+    InsufficientLiquidity,     <span class="cm">// 6006</span>
+    <span class="cm">#[msg("Bet not yet expired")]</span>
+    BetNotExpired,             <span class="cm">// 6007</span>
+    <span class="cm">#[msg("Bet already settled")]</span>
+    BetAlreadySettled,         <span class="cm">// 6008</span>
+    <span class="cm">#[msg("Odds must sum to 10000")]</span>
+    InvalidOddsSum,            <span class="cm">// 6009</span>
+    <span class="cm">#[msg("Insufficient funds")]</span>
+    InsufficientFunds,         <span class="cm">// 6010</span>
+    <span class="cm">#[msg("Bet already expired, cannot cancel")]</span>
+    BetExpired,                <span class="cm">// 6011</span>
+}</pre>
+
+<!-- ======================================== -->
+<h2>7 — CPI & Data Flow (por Program)</h2>
+<p>Cada program isolado: quem assina, o que lê, o que escreve, pra onde vai USDC.</p>
+
+<h3>7a — OracleAdapter</h3>
+
+<div class="diagram-wrapper">
+<pre class="mermaid">
+graph LR
+  AUTH["🔑 Backend\nAuthority"]
+
+  subgraph OracleAdapter
+    UO["update_odds()"]
+    PE["push_event()"]
+  end
+
+  M[("Match PDA")]
+
+  AUTH -- "signs" --> UO
+  AUTH -- "signs" --> PE
+  UO -- "create / write" --> M
+  PE -- "write events" --> M
+</pre>
+</div>
+
+<div class="note">
+  <strong>Simples:</strong> só o backend escreve. Nenhum USDC envolvido. Match PDA é a única account tocada.
+</div>
+
+<h3>7b — BettingEngine</h3>
+
+<div class="diagram-wrapper">
+<pre class="mermaid">
+graph LR
+  USR["👤 User"]
+  AUTH["🔑 Backend"]
+
+  subgraph BettingEngine
+    PB["place_bet()"]
+    SB["settle_bet()"]
+    CB["cancel_bet()"]
+  end
+
+  M[("Match PDA")]
+  B[("Bet PDA")]
+  P[("Pool PDA")]
+  V[("Vault USDC")]
+
+  USR -- "signs" --> PB
+  USR -- "signs" --> CB
+  AUTH -- "signs" --> SB
+  AUTH -- "signs" --> CB
+
+  PB -- "read odds" --> M
+  PB -- "create" --> B
+  PB -- "lock liquidity" --> P
+  PB -- "USDC user → vault" --> V
+
+  SB -- "read + update status" --> B
+  SB -- "unlock liquidity" --> P
+  SB -- "USDC vault → user" --> V
+
+  CB -- "update status" --> B
+  CB -- "unlock liquidity" --> P
+  CB -- "USDC vault → user" --> V
+</pre>
+</div>
+
+<div class="note">
+  <strong>place_bet</strong> = user assina. <strong>settle_bet</strong> = backend assina. <strong>cancel_bet</strong> = qualquer um dos dois.
+</div>
+
+<h3>7c — LiquidityPool</h3>
+
+<div class="diagram-wrapper">
+<pre class="mermaid">
+graph LR
+  LPW["💰 LP Wallet"]
+  AUTH["🔑 Backend"]
+
+  subgraph LiquidityPool
+    CP["create_pool()"]
+    DEP["deposit()"]
+    WD["withdraw()"]
+    CF["claim_fees()"]
+  end
+
+  P[("Pool PDA")]
+  V[("Vault USDC")]
+  LP[("LpPosition PDA")]
+
+  AUTH -- "signs" --> CP
+  LPW -- "signs" --> DEP
+  LPW -- "signs" --> WD
+  LPW -- "signs" --> CF
+
+  CP -- "create" --> P
+  CP -- "create" --> V
+
+  DEP -- "create / update" --> LP
+  DEP -- "update shares" --> P
+  DEP -- "USDC LP → vault" --> V
+
+  WD -- "burn shares" --> LP
+  WD -- "update totals" --> P
+  WD -- "USDC vault → LP" --> V
+
+  CF -- "read shares" --> LP
+  CF -- "USDC vault → LP" --> V
+</pre>
+</div>
+
+<div class="note">
+  <strong>create_pool</strong> = backend cria antes do jogo. Depois disso, só o LP wallet interage com esse program.
+</div>
+
+<!-- ======================================== -->
+<h2>8 — Access Control Summary</h2>
+
+<table>
+  <tr><th>Signer</th><th>Pode chamar</th><th>Não pode</th></tr>
+  <tr>
+    <td><code>🔑 Backend</code></td>
+    <td>update_odds, push_event, create_pool, settle_bet, cancel_bet</td>
+    <td>place_bet, deposit, withdraw, claim_fees</td>
+  </tr>
+  <tr>
+    <td><code>👤 User</code></td>
+    <td>place_bet, cancel_bet (próprio bet)</td>
+    <td>settle_bet, update_odds, push_event, create_pool, deposit, withdraw</td>
+  </tr>
+  <tr>
+    <td><code>💰 LP</code></td>
+    <td>deposit, withdraw, claim_fees</td>
+    <td>place_bet, settle_bet, update_odds, push_event, create_pool</td>
+  </tr>
+</table>
+
+<footer>
+  FutOdds — Smart Contracts — Solana Anchor
+</footer>
+
+<script>
+document.addEventListener('wheel', function(e) {
+  window.scrollBy(0, e.deltaY);
+}, { passive: true });
+</script>

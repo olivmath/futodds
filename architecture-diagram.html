@@ -1,0 +1,383 @@
+<title>FutOdds — Architecture</title>
+<style>
+  :root {
+    --bg: #0B0F1A;
+    --surface: #151B2B;
+    --border: #253049;
+    --text: #C8D1E0;
+    --text-dim: #5E6B82;
+    --text-bright: #EDF1F7;
+    --accent: #34D399;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #F7F9FC;
+      --surface: #FFFFFF;
+      --border: #DFE4ED;
+      --text: #3B4459;
+      --text-dim: #8C95A8;
+      --text-bright: #111827;
+      --accent: #059669;
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #F7F9FC; --surface: #FFFFFF; --border: #DFE4ED;
+    --text: #3B4459; --text-dim: #8C95A8; --text-bright: #111827; --accent: #059669;
+  }
+  :root[data-theme="dark"] {
+    --bg: #0B0F1A; --surface: #151B2B; --border: #253049;
+    --text: #C8D1E0; --text-dim: #5E6B82; --text-bright: #EDF1F7; --accent: #34D399;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    overflow-y: scroll !important; overflow-x: hidden;
+    min-height: 100%; height: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    line-height: 1.6; padding: 0 1.5rem 2.5rem; max-width: 960px; margin: 0 auto;
+  }
+
+  .tabs {
+    display: flex; gap: 0; margin-bottom: 2rem;
+    border-bottom: 2px solid var(--border);
+    position: sticky; top: 0; z-index: 10;
+    background: var(--bg); padding-top: 1.5rem;
+  }
+  .tab {
+    padding: 0.6rem 1.2rem; font-size: 0.8rem; font-weight: 600;
+    color: var(--text-dim); text-decoration: none;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px; transition: all 0.15s;
+    letter-spacing: 0.03em;
+  }
+  .tab:hover { color: var(--text-bright); }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  h1 { font-size: 1.6rem; font-weight: 700; color: var(--text-bright); text-align: center; letter-spacing: -0.03em; }
+  h1 span { color: var(--accent); }
+  .subtitle { text-align: center; color: var(--text-dim); font-size: 0.85rem; margin-bottom: 2.5rem; }
+
+  h2 {
+    font-size: 0.95rem; font-weight: 700; color: var(--text-bright);
+    text-transform: uppercase; letter-spacing: 0.08em;
+    margin: 3rem 0 0.5rem; padding-bottom: 0.4rem;
+    border-bottom: 2px solid var(--accent);
+    display: inline-block;
+  }
+  h2 + p { color: var(--text-dim); font-size: 0.8rem; margin-bottom: 1rem; }
+
+  .diagram-wrapper {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 1.5rem; margin: 1rem 0 2rem;
+    overflow-x: auto;
+  }
+  .diagram-wrapper pre.mermaid {
+    display: flex; justify-content: center;
+  }
+
+  .note {
+    background: var(--surface); border-left: 3px solid var(--accent);
+    border-radius: 0 8px 8px 0; padding: 0.8rem 1rem;
+    font-size: 0.78rem; color: var(--text); margin: 1rem 0;
+  }
+  .note strong { color: var(--text-bright); }
+
+  .formula {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 1rem 1.25rem; margin: 1rem 0;
+    font-family: "SF Mono", "Fira Code", monospace;
+    font-size: 0.78rem; line-height: 1.8; overflow-x: auto;
+    color: var(--text);
+  }
+  .formula .g { color: #34D399; } .formula .r { color: #F87171; }
+  .formula .a { color: #FBBF24; } .formula .d { color: #5E6B82; }
+
+  footer {
+    text-align: center; margin-top: 3rem; padding-top: 1.5rem;
+    border-top: 1px solid var(--border);
+    color: var(--text-dim); font-size: 0.7rem;
+    text-transform: uppercase; letter-spacing: 0.06em;
+  }
+</style>
+
+<nav class="tabs">
+  <a class="tab active">System Overview</a>
+  <a class="tab" href="https://claude.ai/code/artifact/0ff962ad-0836-4878-96df-70f869d0e599" target="_top">Contracts</a>
+</nav>
+
+<h1>Fut<span>Odds</span></h1>
+<p class="subtitle">Binary options on live sports odds — Solana × TxODDS</p>
+
+<!-- ======================================== -->
+<h2>1 — Visão Geral do Sistema</h2>
+<p>Quem fala com quem e o que trafega entre cada camada.</p>
+
+<div class="diagram-wrapper">
+<pre class="mermaid">
+graph TB
+  subgraph EXT["🌐 Externo"]
+    TX["TxODDS / TxLINE API"]
+  end
+
+  subgraph BACK["⚙️ Backend (Rust)"]
+    POLL["Odds Poller\n(a cada ~5s)"]
+    SETTLE["Settlement Cron"]
+    RISK["Risk Engine"]
+    WS["WebSocket Server"]
+  end
+
+  subgraph SOL["◎ Solana Programs"]
+    ORA["OracleAdapter"]
+    BET["BettingEngine"]
+    POOL["LiquidityPool"]
+    VAULT[("USDC Vault")]
+  end
+
+  subgraph USERS["👥 Usuários"]
+    APOSTADOR["Apostador"]
+    LP["Investidor / LP"]
+  end
+
+  TX -- "odds + eventos (WS)" --> POLL
+  POLL -- "push odds real-time" --> WS
+  POLL -- "update_odds()" --> ORA
+  WS -- "gráfico ao vivo" --> APOSTADOR
+
+  APOSTADOR -- "place_bet(UP/DOWN)" --> BET
+  BET -- "check exposure" --> RISK
+  BET -- "lock liquidity" --> POOL
+  POOL --> VAULT
+
+  SETTLE -- "settle_bet(odds_expiry)" --> BET
+  BET -- "payout USDC" --> APOSTADOR
+  BET -- "unlock + fees" --> POOL
+
+  LP -- "deposit USDC" --> POOL
+  POOL -- "withdraw + claim_fees" --> LP
+</pre>
+</div>
+
+<!-- ======================================== -->
+<h2>2 — Sequência: Apostar</h2>
+<p>O que acontece quando o user clica UP ou DOWN.</p>
+
+<div class="diagram-wrapper">
+<pre class="mermaid">
+sequenceDiagram
+  actor User as Apostador
+  participant FE as Frontend
+  participant BE as Backend
+  participant BET as BettingEngine
+  participant POOL as LiquidityPool
+  participant VAULT as USDC Vault
+
+  User->>FE: Escolhe jogo + window (5min)
+  FE->>BE: GET odds atuais
+  BE-->>FE: BRA 65% / ARG 30%
+  FE-->>User: Mostra gráfico + payout estimado
+
+  User->>FE: Aposta 100 USDC → UP
+  FE->>BET: place_bet(UP, 5min, 100)
+
+  BET->>BET: Fee: 100 × 2% = 2 USDC
+  BET->>BET: Calcula payout dinâmico
+  BET->>POOL: Checa exposição líquida
+  POOL-->>BET: net_exposure OK (< 80%)
+
+  BET->>VAULT: Transfer 98 USDC do user
+  BET->>POOL: Lock payout no pool
+  BET->>BET: Cria Bet PDA (odds_entry: 65%)
+
+  BET-->>FE: ✅ Bet criada — expira em 5min
+  FE-->>User: "Aposta aberta: UP 5min"
+</pre>
+</div>
+
+<!-- ======================================== -->
+<h2>3 — Sequência: Settlement</h2>
+<p>Como a aposta é liquidada após o timer expirar.</p>
+
+<div class="diagram-wrapper">
+<pre class="mermaid">
+sequenceDiagram
+  participant CRON as Settlement Cron
+  participant BE as Backend (DB)
+  participant BET as BettingEngine
+  participant POOL as LiquidityPool
+  participant VAULT as USDC Vault
+  actor User as Apostador
+  actor LPs as Investidores
+
+  CRON->>CRON: Scan bets onde now > expires_at
+
+  CRON->>BE: GET odds no timestamp de expiração
+  BE-->>CRON: BRA 67% (era 65% no entry)
+
+  CRON->>BET: settle_bet(bet_id, odds_expiry: 67%)
+
+  alt User apostou UP e odds subiram (65→67)
+    BET->>VAULT: Transfer payout → User
+    VAULT-->>User: 💰 Recebe 122.2 USDC
+    BET->>POOL: Unlock liquidity restante
+  else User apostou UP mas odds caíram (65→63)
+    BET->>POOL: Unlock toda liquidity
+    BET->>POOL: Distribui fee pros LPs
+    POOL-->>LPs: 💰 +1.5 USDC (fee share)
+  end
+
+  BET->>BET: Bet status → Won ou Lost
+</pre>
+</div>
+
+<!-- ======================================== -->
+<h2>4 — Sequência: Investidor (LP)</h2>
+<p>Ciclo do investidor que fornece liquidez.</p>
+
+<div class="diagram-wrapper">
+<pre class="mermaid">
+sequenceDiagram
+  actor LP as Investidor
+  participant POOL as LiquidityPool
+  participant VAULT as USDC Vault
+
+  LP->>POOL: deposit(5000 USDC)
+  POOL->>VAULT: Transfer USDC
+  POOL->>POOL: Mint LP shares pro-rata
+  POOL-->>LP: ✅ 5000 shares (50% do pool)
+
+  Note over POOL: Apostas acontecem...<br/>fees acumulam no pool
+
+  LP->>POOL: claim_fees()
+  POOL-->>LP: 💰 75 USDC (fees acumulados)
+
+  LP->>POOL: withdraw(2000 shares)
+  POOL->>POOL: Checa: só liquidity não-locked
+  POOL->>VAULT: Transfer USDC proporcional
+  POOL->>POOL: Burn 2000 shares
+  VAULT-->>LP: 💰 2000 USDC de volta
+</pre>
+</div>
+
+<!-- ======================================== -->
+<h2>5 — Payout Dinâmico</h2>
+<p>O payout muda conforme a proporção de apostas UP vs DOWN.</p>
+
+<div class="diagram-wrapper">
+<pre class="mermaid">
+graph LR
+  subgraph POOL["Pool de Apostas"]
+    UP["🟢 UP: 8,000 USDC\n(80% dos apostadores)"]
+    DOWN["🔴 DOWN: 2,000 USDC\n(20% dos apostadores)"]
+  end
+
+  UP -- "payout baixo\n1.25x" --> R1["Maioria aposta\n= menos retorno"]
+  DOWN -- "payout alto\n5.0x" --> R2["Minoria aposta\n= mais retorno"]
+</pre>
+</div>
+
+<div class="formula">
+  <span class="d">// Aposta de 100 USDC — fee 2%</span><br>
+  effective = 100 - (100 × 0.02) = <span class="g">98 USDC</span><br><br>
+
+  <span class="d">// Se apostar UP (lado com 8,000):</span><br>
+  payout = 98 × (1 + <span class="r">2,000</span> / (<span class="g">8,000</span> + 98)) = 98 × 1.247 = <span class="g">122 USDC</span><br><br>
+
+  <span class="d">// Se apostar DOWN (lado com 2,000):</span><br>
+  payout = 98 × (1 + <span class="g">8,000</span> / (<span class="r">2,000</span> + 98)) = 98 × 4.81 = <span class="g">471 USDC</span>
+</div>
+
+<div class="note">
+  <strong>Incentivo natural:</strong> quanto mais gente aposta num lado, menor o payout daquele lado — isso atrai apostas pro lado oposto e equilibra o pool automaticamente.
+</div>
+
+<!-- ======================================== -->
+<h2>6 — Controle de Risco</h2>
+<p>Exposição máxima do pool = 80% da liquidity total.</p>
+
+<div class="diagram-wrapper">
+<pre class="mermaid">
+graph TD
+  NEW["Nova aposta chega"] --> CALC["Calcula exposição líquida\n|payout_UP - payout_DOWN|"]
+  CALC --> CHECK{"net_exposure\n< 80% do pool?"}
+  CHECK -- "✅ Sim" --> ACCEPT["Aceita a aposta\nLock liquidity"]
+  CHECK -- "❌ Não" --> REJECT["Rejeita a aposta\nPool protegido"]
+  REJECT --> WAIT["Aguarda apostas no\nlado oposto equilibrarem"]
+</pre>
+</div>
+
+<div class="formula">
+  <span class="d">// Exemplo: pool = 10,000 USDC</span><br>
+  exposure_up &nbsp; = <span class="g">7,200</span> &nbsp; <span class="d">(soma payouts UP)</span><br>
+  exposure_down = <span class="r">3,600</span> &nbsp; <span class="d">(soma payouts DOWN)</span><br><br>
+  net = |7,200 - 3,600| = <span class="a">3,600</span><br>
+  max = 10,000 × 0.80 &nbsp;= 8,000<br><br>
+  3,600 < 8,000 → <span class="g">✓ ACEITA</span>
+</div>
+
+<!-- ======================================== -->
+<h2>7 — Accounts On-chain (PDAs)</h2>
+<p>Estrutura dos dados gravados na Solana.</p>
+
+<div class="diagram-wrapper">
+<pre class="mermaid">
+classDiagram
+  class Match {
+    +String match_id
+    +Enum sport
+    +[Team, Team] teams
+    +Enum status: Upcoming|Live|Settled
+    +OddsSnapshot current_odds
+    +Pubkey pool
+    +Vec~MatchEvent~ events
+  }
+
+  class LiquidityPool {
+    +u64 total_liquidity
+    +u64 locked_liquidity
+    +u64 exposure_up
+    +u64 exposure_down
+    +u16 fee_rate
+    +Vec~LpShare~ lp_shares
+    +Pubkey vault
+  }
+
+  class Bet {
+    +Pubkey user
+    +Enum direction: Up|Down
+    +Enum market: Odds|Goal|Cards
+    +OddsSnapshot odds_at_entry
+    +u64 amount
+    +u64 payout
+    +Enum window: 1m|5m|10m|20m
+    +i64 created_at
+    +i64 expires_at
+    +Enum status: Open|Won|Lost
+  }
+
+  class OddsSnapshot {
+    +u16 home
+    +u16 away
+    +u16 draw
+    +i64 timestamp
+  }
+
+  Match "1" --> "1" LiquidityPool : has pool
+  Match "1" --> "*" Bet : contains bets
+  Bet --> OddsSnapshot : odds_at_entry
+  Match --> OddsSnapshot : current_odds
+</pre>
+</div>
+
+<footer>
+  FutOdds — Solana × TxODDS — World Cup Hackathon 2026
+</footer>
+<script>
+document.addEventListener('wheel', function(e) {
+  window.scrollBy(0, e.deltaY);
+}, { passive: true });
+</script>
