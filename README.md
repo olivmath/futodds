@@ -23,6 +23,27 @@ Users bet whether live match odds will go **UP** or **DOWN** within a time windo
 | Backend | JS + Express |
 | Realtime | Solana RPC WebSocket logs |
 
+## Testnet Deployment Evidence
+
+Redeployed on Solana testnet for the hackathon demo.
+
+| Program | Program ID | Last Deployed Slot | Data Length | Authority |
+|---|---|---:|---:|---|
+| `oracle_adapter` | `6BVWCCQDjQDcjQYhmbzJ9DFWY9LyDojM3mYoWivrASaG` | `422618831` | `166424` bytes | `CvReCDqGVKDU9i1ZF8WZy1NUbdZrZVs423FPFiNB3kyj` |
+| `betting_engine` | `GoccKzkMS5BWRmrbLdGKzqKUUcksZB3DftW82F7boCoQ` | `422627116` | `225632` bytes | `CvReCDqGVKDU9i1ZF8WZy1NUbdZrZVs423FPFiNB3kyj` |
+
+| Program | Deploy Signature |
+|---|---|
+| `oracle_adapter` | `5tmWKdnZHhH1j5fLxFbKZKqCvoWYfAdMCivJAmCmhuNPZru2P9PmMBhV87HAs8MCRvCEFVdmaFpFtAbUiAzoFPiz` |
+| `betting_engine` | `ikSPXrjgQmd7XHzBoXj87qsbzcwzcLGHrmxGsikEMeP4BLJW822D1bxdr6ydn66ZjHNsanF6WwT2zfPd3ZrPqb` |
+
+Verify with:
+
+```bash
+solana program show 6BVWCCQDjQDcjQYhmbzJ9DFWY9LyDojM3mYoWivrASaG --url https://api.testnet.solana.com
+solana program show GoccKzkMS5BWRmrbLdGKzqKUUcksZB3DftW82F7boCoQ --url https://api.testnet.solana.com
+```
+
 ## Project Structure
 
 ```
