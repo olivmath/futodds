@@ -39,7 +39,7 @@ docs/
 
 | Phase | Description | Status |
 |---|---|---|
-| 0 | Oracle Smoke Test | In Progress |
+| 0 | Oracle Smoke Test | Done |
 | 1a | place_bet with escrow | Pending |
 | 1b | settle_bet | Pending |
 | 2a | Pool + deposit | Pending |

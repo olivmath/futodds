@@ -1,4 +1,3 @@
-
 use {
     anchor_lang::{
         prelude::Pubkey,
@@ -6,6 +5,7 @@ use {
         AccountDeserialize, InstructionData, ToAccountMetas,
     },
     litesvm::LiteSVM,
+    oracle_adapter::MatchAccount,
     solana_keypair::Keypair,
     solana_message::{Message, VersionedMessage},
     solana_signer::Signer,
@@ -33,11 +33,8 @@ fn build_update_odds_ix(
     odds_draw: u16,
 ) -> Instruction {
     let program_id = oracle_adapter::id();
-    let match_account = Pubkey::find_program_address(
-        &[b"match", match_id.as_bytes()],
-        &program_id,
-    )
-    .0;
+    let match_account =
+        Pubkey::find_program_address(&[b"match", match_id.as_bytes()], &program_id).0;
 
     Instruction::new_with_bytes(
         program_id,
@@ -61,7 +58,9 @@ fn send_tx(svm: &mut LiteSVM, ix: Instruction, signer: &Keypair) -> Result<(), S
     let blockhash = svm.latest_blockhash();
     let msg = Message::new_with_blockhash(&[ix], Some(&signer.pubkey()), &blockhash);
     let tx = VersionedTransaction::try_new(VersionedMessage::Legacy(msg), &[signer]).unwrap();
-    svm.send_transaction(tx).map(|_| ()).map_err(|e| e.to_string())
+    svm.send_transaction(tx)
+        .map(|_| ())
+        .map_err(|e| format!("{e:?}"))
 }
 
 #[test]
@@ -74,16 +73,11 @@ fn test_create_match_with_initial_odds() {
     assert!(res.is_ok(), "Failed to create match: {:?}", res.err());
 
     let program_id = oracle_adapter::id();
-    let match_pda = Pubkey::find_program_address(
-        &[b"match", match_id.as_bytes()],
-        &program_id,
-    )
-    .0;
+    let match_pda = Pubkey::find_program_address(&[b"match", match_id.as_bytes()], &program_id).0;
 
     let account = svm.get_account(&match_pda).unwrap();
     let mut data: &[u8] = &account.data;
-    let match_state =
-        oracle_adapter::state::MatchAccount::try_deserialize(&mut data).unwrap();
+    let match_state = MatchAccount::try_deserialize(&mut data).unwrap();
 
     assert_eq!(match_state.odds_home, 6500);
     assert_eq!(match_state.odds_away, 3000);
@@ -106,16 +100,11 @@ fn test_update_existing_odds() {
     assert!(res.is_ok(), "Failed to update match: {:?}", res.err());
 
     let program_id = oracle_adapter::id();
-    let match_pda = Pubkey::find_program_address(
-        &[b"match", match_id.as_bytes()],
-        &program_id,
-    )
-    .0;
+    let match_pda = Pubkey::find_program_address(&[b"match", match_id.as_bytes()], &program_id).0;
 
     let account = svm.get_account(&match_pda).unwrap();
     let mut data: &[u8] = &account.data;
-    let match_state =
-        oracle_adapter::state::MatchAccount::try_deserialize(&mut data).unwrap();
+    let match_state = MatchAccount::try_deserialize(&mut data).unwrap();
 
     assert_eq!(match_state.odds_home, 6700);
     assert_eq!(match_state.odds_away, 2800);
@@ -147,5 +136,8 @@ fn test_reject_invalid_odds_sum() {
     // 6500 + 3000 + 600 = 10100, should fail
     let ix = build_update_odds_ix(&payer, match_id, 6500, 3000, 600);
     let res = send_tx(&mut svm, ix, &payer);
-    assert!(res.is_err(), "Expected InvalidOddsSum error but tx succeeded");
+    assert!(
+        res.is_err(),
+        "Expected InvalidOddsSum error but tx succeeded"
+    );
 }
