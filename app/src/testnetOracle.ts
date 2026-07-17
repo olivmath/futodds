@@ -41,6 +41,14 @@ export const SETTLE_BET_DISCRIMINATOR = Uint8Array.from([
   115, 55, 234, 177, 227, 4, 10, 67,
 ]);
 
+export const ODDS_UPDATED_EVENT_DISCRIMINATOR = Uint8Array.from([
+  156, 39, 18, 117, 46, 12, 46, 218,
+]);
+
+export const BET_SETTLED_EVENT_DISCRIMINATOR = Uint8Array.from([
+  57, 145, 224, 160, 62, 119, 227, 206,
+]);
+
 export type OddsInput = {
   home: number;
   away: number;
@@ -81,6 +89,32 @@ export type BetAccount = {
   nonce: number;
   bump: number;
 };
+
+export type OddsUpdatedEvent = {
+  type: "OddsUpdated";
+  authority: PublicKey;
+  matchId: string;
+  oddsHome: number;
+  oddsAway: number;
+  oddsDraw: number;
+  updatedAt: bigint;
+};
+
+export type BetSettledEvent = {
+  type: "BetSettled";
+  authority: PublicKey;
+  user: PublicKey;
+  matchId: string;
+  bet: PublicKey;
+  direction: Direction;
+  oddsAtEntry: number;
+  oddsAtExpiryHome: number;
+  status: number;
+  won: boolean;
+  settledAt: bigint;
+};
+
+export type AnchorRealtimeEvent = OddsUpdatedEvent | BetSettledEvent;
 
 export function encodeMintToData(amount: bigint): Buffer {
   const data = Buffer.alloc(1 + 8);
@@ -412,4 +446,99 @@ export function decodeBetAccount(data: Buffer | Uint8Array): BetAccount {
     nonce,
     bump,
   };
+}
+
+export function parseAnchorEventFromLogs(logs: string[]): AnchorRealtimeEvent | null {
+  for (const log of logs) {
+    const encoded = log.startsWith("Program data: ") ? log.slice("Program data: ".length) : null;
+    if (!encoded) {
+      continue;
+    }
+
+    const payload = Buffer.from(encoded, "base64");
+    if (startsWith(payload, ODDS_UPDATED_EVENT_DISCRIMINATOR)) {
+      return decodeOddsUpdatedEvent(payload);
+    }
+    if (startsWith(payload, BET_SETTLED_EVENT_DISCRIMINATOR)) {
+      return decodeBetSettledEvent(payload);
+    }
+  }
+
+  return null;
+}
+
+function decodeOddsUpdatedEvent(payload: Buffer): OddsUpdatedEvent {
+  let offset = 8;
+  const authority = new PublicKey(payload.subarray(offset, offset + 32));
+  offset += 32;
+  const { value: matchId, nextOffset } = readString(payload, offset);
+  offset = nextOffset;
+  const oddsHome = payload.readUInt16LE(offset);
+  offset += 2;
+  const oddsAway = payload.readUInt16LE(offset);
+  offset += 2;
+  const oddsDraw = payload.readUInt16LE(offset);
+  offset += 2;
+  const updatedAt = payload.readBigInt64LE(offset);
+
+  return {
+    type: "OddsUpdated",
+    authority,
+    matchId,
+    oddsHome,
+    oddsAway,
+    oddsDraw,
+    updatedAt,
+  };
+}
+
+function decodeBetSettledEvent(payload: Buffer): BetSettledEvent {
+  let offset = 8;
+  const authority = new PublicKey(payload.subarray(offset, offset + 32));
+  offset += 32;
+  const user = new PublicKey(payload.subarray(offset, offset + 32));
+  offset += 32;
+  const { value: matchId, nextOffset } = readString(payload, offset);
+  offset = nextOffset;
+  const bet = new PublicKey(payload.subarray(offset, offset + 32));
+  offset += 32;
+  const direction = payload.readUInt8(offset) as Direction;
+  offset += 1;
+  const oddsAtEntry = payload.readUInt16LE(offset);
+  offset += 2;
+  const oddsAtExpiryHome = payload.readUInt16LE(offset);
+  offset += 2;
+  const status = payload.readUInt8(offset);
+  offset += 1;
+  const won = payload.readUInt8(offset) === 1;
+  offset += 1;
+  const settledAt = payload.readBigInt64LE(offset);
+
+  return {
+    type: "BetSettled",
+    authority,
+    user,
+    matchId,
+    bet,
+    direction,
+    oddsAtEntry,
+    oddsAtExpiryHome,
+    status,
+    won,
+    settledAt,
+  };
+}
+
+function readString(buffer: Buffer, offset: number): { value: string; nextOffset: number } {
+  const length = buffer.readUInt32LE(offset);
+  const start = offset + 4;
+  const end = start + length;
+  return {
+    value: buffer.subarray(start, end).toString("utf8"),
+    nextOffset: end,
+  };
+}
+
+function startsWith(buffer: Buffer, prefix: Uint8Array): boolean {
+  return prefix.every((byte, index) => buffer[index] === byte);
 }

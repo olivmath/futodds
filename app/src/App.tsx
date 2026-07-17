@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Connection, PublicKey, Transaction } from "@solana/web3.js";
 import {
   BETTING_ENGINE_PROGRAM_ID,
@@ -24,6 +24,7 @@ import {
   formatTokenUnits,
   oddsAreValid,
   oddsSum,
+  parseAnchorEventFromLogs,
   resolveWalletPublicKey,
   usdcToUnits,
 } from "./testnetOracle";
@@ -496,6 +497,61 @@ function App() {
       setIsBusy(false);
     }
   }, [connection, pushLog, walletPublicKey]);
+
+  useEffect(() => {
+    const oracleListener = connection.onLogs(PROGRAM_ID, (logs) => {
+      const event = parseAnchorEventFromLogs(logs.logs);
+      if (event?.type !== "OddsUpdated") {
+        void fetchMatch();
+        return;
+      }
+      if (event.matchId !== matchId) {
+        return;
+      }
+
+      setAccount((current) => ({
+        authority: event.authority,
+        matchId: event.matchId,
+        oddsHome: event.oddsHome,
+        oddsAway: event.oddsAway,
+        oddsDraw: event.oddsDraw,
+        updatedAt: event.updatedAt,
+        bump: current?.bump ?? 0,
+      }));
+      setOdds({ home: event.oddsHome, away: event.oddsAway, draw: event.oddsDraw });
+      pushLog({
+        title: "Realtime odds",
+        body: `${event.matchId}: ${event.oddsHome}/${event.oddsAway}/${event.oddsDraw}`,
+        kind: "success",
+      });
+    }, "confirmed");
+
+    const bettingListener = connection.onLogs(BETTING_ENGINE_PROGRAM_ID, (logs) => {
+      const event = parseAnchorEventFromLogs(logs.logs);
+      if (!walletPublicKey) {
+        return;
+      }
+      if (event?.type !== "BetSettled") {
+        void fetchBets();
+        return;
+      }
+      if (!event.user.equals(walletPublicKey)) {
+        return;
+      }
+
+      void fetchBets();
+      pushLog({
+        title: "Realtime settlement",
+        body: `${event.matchId}: ${event.won ? "won" : "lost"} at ${event.oddsAtExpiryHome}`,
+        kind: "success",
+      });
+    }, "confirmed");
+
+    return () => {
+      void connection.removeOnLogsListener(oracleListener);
+      void connection.removeOnLogsListener(bettingListener);
+    };
+  }, [connection, fetchBets, fetchMatch, matchId, pushLog, walletPublicKey]);
 
   const settleBet = useCallback(
     async (bet: ListedBet) => {

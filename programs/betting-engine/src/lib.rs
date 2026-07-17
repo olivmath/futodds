@@ -105,8 +105,35 @@ pub mod betting_engine {
             bet.status = 2; // Lost
         }
 
+        emit!(BetSettled {
+            authority: ctx.accounts.authority.key(),
+            user: bet.user,
+            match_id: bet.match_id.clone(),
+            bet: bet.key(),
+            direction: bet.direction,
+            odds_at_entry: bet.odds_at_entry,
+            odds_at_expiry_home,
+            status: bet.status,
+            won,
+            settled_at: clock.unix_timestamp,
+        });
+
         Ok(())
     }
+}
+
+#[event]
+pub struct BetSettled {
+    pub authority: Pubkey,
+    pub user: Pubkey,
+    pub match_id: String,
+    pub bet: Pubkey,
+    pub direction: u8,
+    pub odds_at_entry: u16,
+    pub odds_at_expiry_home: u16,
+    pub status: u8,
+    pub won: bool,
+    pub settled_at: i64,
 }
 
 #[derive(Accounts)]

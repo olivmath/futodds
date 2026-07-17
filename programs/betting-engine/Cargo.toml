@@ -26,6 +26,7 @@ anchor-spl = "1.1.2"
 oracle_adapter = { path = "../oracle-adapter", features = ["cpi"] }
 
 [dev-dependencies]
+base64 = "0.22.1"
 litesvm = "0.10.0"
 solana-message = "3.0.1"
 solana-transaction = "3.0.2"

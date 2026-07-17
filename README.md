@@ -20,7 +20,8 @@ Users bet whether live match odds will go **UP** or **DOWN** within a time windo
 | Smart Contracts | Solana (Anchor) |
 | Odds Feed | TxODDS / TxLINE API |
 | Token | USDC |
-| Backend | Rust |
+| Backend | JS + Express |
+| Realtime | Solana RPC WebSocket logs |
 
 ## Project Structure
 
@@ -29,6 +30,10 @@ programs/
   oracle-adapter/    # Writes/reads odds on-chain
   betting-engine/    # place_bet, settle_bet, cancel_bet (planned)
   liquidity-pool/    # Pool, LP shares, fees (planned)
+backend/
+  src/                # Express server, odds poller, settlement worker
+app/
+  src/                # Testnet console and Solana realtime parser
 docs/
   fase-0-oracle.md   # Phase plans with test matrices
   fase-1a-place-bet.md
@@ -42,6 +47,7 @@ docs/
 | 0 | Oracle Smoke Test | Done |
 | 1a | place_bet with escrow | Pending |
 | 1b | settle_bet | Pending |
+| 1c | Backend oracle + canonical realtime | In progress |
 | 2a | Pool + deposit | Pending |
 | 2b | Integrate betting with pool | Pending |
 | 2c | withdraw + claim_fees | Pending |
@@ -61,8 +67,30 @@ cargo install --git https://github.com/coral-xyz/anchor avm --force
 avm install latest
 
 # Build
-anchor build
+anchor build --ignore-keys
 
 # Test
-anchor test
+cargo test
+cd app && npm test && npm run build
+cd ../backend && npm test
 ```
+
+## Backend
+
+```bash
+cd backend
+npm install
+npm test
+npm start
+```
+
+Endpoints:
+
+| Method | Route |
+|---|---|
+| `GET` | `/health` |
+| `GET` | `/status` |
+| `GET` | `/matches` |
+| `POST` | `/poller/start` |
+| `POST` | `/poller/stop` |
+| `POST` | `/settlement/run-once` |

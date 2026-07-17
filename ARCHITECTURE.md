@@ -10,6 +10,7 @@ Binary options on sports odds movements. Users bet if odds will go UP or DOWN wi
 | Token | USDC |
 | Oracle | Backend as sole authority |
 | Odds on-chain | Only entry + expiry (cheap) |
+| Realtime | Canonical Anchor events via Solana RPC WebSocket |
 | Exposure limit | 80% max on net exposure |
 | Payout | Dynamic (based on UP/DOWN ratio) |
 
@@ -33,10 +34,12 @@ Binary options on sports odds movements. Users bet if odds will go UP or DOWN wi
   2. Compare direction vs actual movement
   3. Won → transfer payout from vault to user
   4. Lost → unlock liquidity + distribute fees
+- emits `BetSettled(authority, user, match_id, bet, direction, odds_at_entry, odds_at_expiry_home, status, won, settled_at)`
 
 ### 3. OracleAdapter
 - `update_odds(match_id, snapshot, timestamp)` — backend authority only
 - `push_event(match_id, event_type, timestamp)` — goal, card, etc.
+- current MVP emits `OddsUpdated(authority, match_id, odds_home, odds_away, odds_draw, updated_at)`
 
 ## Accounts (PDAs)
 
@@ -110,11 +113,27 @@ Fee: 2% of each bet
 
 | Service | Role |
 |---|---|
-| **Odds Poller** | Poll TxODDS/TxLINE every ~5s, push via WebSocket to frontend |
+| **Odds Poller** | Generates/fetches configured odds and sends `update_odds` transactions |
 | **Settlement Cron** | Scan expired bets, call `settle_bet` with odds at expiry |
 | **Event Listener** | Listen for match events (goal, card) from TxLINE |
 | **Risk Engine** | Monitor pool exposure, pause bets if needed |
-| **WebSocket Server** | Real-time odds + chart data to frontend |
+| **Express Admin API** | Health/status, configured matches, poller controls, manual settlement |
+
+## Canonical Realtime
+
+```txt
+backend odds poller
+  -> update_odds
+  -> OddsUpdated event
+  -> frontend connection.onLogs(oracle_adapter)
+
+backend settlement worker
+  -> settle_bet
+  -> BetSettled event
+  -> frontend connection.onLogs(betting_engine)
+```
+
+The frontend does not depend on a custom backend WebSocket. It parses Anchor `Program data:` logs and falls back to refetching on-chain accounts when an event cannot be decoded.
 
 ## TxODDS Integration
 

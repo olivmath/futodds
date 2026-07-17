@@ -11,7 +11,7 @@ use {
         token::spl_token,
     },
     betting_engine::Bet,
-    litesvm::LiteSVM,
+    litesvm::{types::TransactionMetadata, LiteSVM},
     solana_keypair::Keypair,
     solana_message::{Message, VersionedMessage},
     solana_signer::Signer,
@@ -132,12 +132,31 @@ fn mint_to(
 }
 
 fn send_tx(svm: &mut LiteSVM, ix: Instruction, signer: &Keypair) -> Result<(), String> {
+    send_tx_with_metadata(svm, ix, signer)
+        .map(|_| ())
+        .map_err(|e| format!("{e:?}"))
+}
+
+fn send_tx_with_metadata(
+    svm: &mut LiteSVM,
+    ix: Instruction,
+    signer: &Keypair,
+) -> Result<TransactionMetadata, String> {
     let blockhash = svm.latest_blockhash();
     let msg = Message::new_with_blockhash(&[ix], Some(&signer.pubkey()), &blockhash);
     let tx = VersionedTransaction::try_new(VersionedMessage::Legacy(msg), &[signer]).unwrap();
-    svm.send_transaction(tx)
-        .map(|_| ())
-        .map_err(|e| format!("{e:?}"))
+    svm.send_transaction(tx).map_err(|e| format!("{e:?}"))
+}
+
+fn anchor_event_payload(logs: &[String], discriminator: &[u8]) -> Vec<u8> {
+    logs.iter()
+        .filter_map(|log| log.strip_prefix("Program data: "))
+        .filter_map(|encoded| {
+            use base64::{engine::general_purpose::STANDARD, Engine as _};
+            STANDARD.decode(encoded).ok()
+        })
+        .find(|data| data.starts_with(discriminator))
+        .expect("expected Anchor event payload in program logs")
 }
 
 fn get_token_balance(svm: &LiteSVM, token_account: &Pubkey) -> u64 {
@@ -759,4 +778,80 @@ fn test_reject_unauthorized_settler() {
     );
     let res = send_tx(&mut env.svm, ix, &random_signer);
     assert!(res.is_err(), "Expected Unauthorized error but tx succeeded");
+}
+
+#[test]
+fn test_settle_bet_emits_bet_settled_event() {
+    let mut env = setup();
+    let amount = 100_000_000;
+    let nonce = 0u32;
+    let user = setup_placed_bet(&mut env, 0, amount, 6500, 60);
+
+    let bet = get_bet_account(&env.svm, MATCH_ID, &user.pubkey(), nonce);
+    set_clock(&mut env.svm, bet.expires_at + 1);
+
+    let ix = build_settle_bet_ix(
+        &env.authority,
+        &user.pubkey(),
+        MATCH_ID,
+        &env.usdc_mint,
+        nonce,
+        6700,
+    );
+    let meta =
+        send_tx_with_metadata(&mut env.svm, ix, &env.authority).expect("settle_bet should succeed");
+
+    let payload = anchor_event_payload(&meta.logs, &[57, 145, 224, 160, 62, 119, 227, 206]);
+    let mut offset = 8;
+
+    assert_eq!(
+        Pubkey::new_from_array(payload[offset..offset + 32].try_into().unwrap()),
+        env.authority.pubkey()
+    );
+    offset += 32;
+    assert_eq!(
+        Pubkey::new_from_array(payload[offset..offset + 32].try_into().unwrap()),
+        user.pubkey()
+    );
+    offset += 32;
+
+    let match_id_len = u32::from_le_bytes(payload[offset..offset + 4].try_into().unwrap()) as usize;
+    offset += 4;
+    assert_eq!(
+        std::str::from_utf8(&payload[offset..offset + match_id_len]).unwrap(),
+        MATCH_ID
+    );
+    offset += match_id_len;
+
+    assert_eq!(
+        Pubkey::new_from_array(payload[offset..offset + 32].try_into().unwrap()),
+        Pubkey::find_program_address(
+            &[
+                b"bet",
+                MATCH_ID.as_bytes(),
+                user.pubkey().as_ref(),
+                &nonce.to_le_bytes(),
+            ],
+            &betting_engine::id(),
+        )
+        .0
+    );
+    offset += 32;
+    assert_eq!(payload[offset], 0);
+    offset += 1;
+    assert_eq!(
+        u16::from_le_bytes(payload[offset..offset + 2].try_into().unwrap()),
+        6500
+    );
+    offset += 2;
+    assert_eq!(
+        u16::from_le_bytes(payload[offset..offset + 2].try_into().unwrap()),
+        6700
+    );
+    offset += 2;
+    assert_eq!(payload[offset], 1);
+    offset += 1;
+    assert_eq!(payload[offset], 1);
+    offset += 1;
+    assert!(i64::from_le_bytes(payload[offset..offset + 8].try_into().unwrap()) > 0);
 }

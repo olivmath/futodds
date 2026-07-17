@@ -19,6 +19,7 @@ import {
   formatTokenUnits,
   oddsAreValid,
   oddsSum,
+  parseAnchorEventFromLogs,
   resolveWalletPublicKey,
   usdcToUnits,
 } from "./testnetOracle";
@@ -154,6 +155,120 @@ describe("phase 0 oracle helpers", () => {
     expect(usdcToUnits("100.123456")).toBe(100_123_456n);
     expect(() => usdcToUnits("1.1234567")).toThrow("Use ate 6 casas decimais.");
   });
+
+  it("parses canonical OddsUpdated Anchor logs", () => {
+    const authority = new PublicKey("He5N26TPqsKvbG1UJgj5QgVrEroz4hMjPdytMvx677AA");
+    const payload = buildOddsUpdatedPayload(authority, "match_1", 6500, 3000, 500, 1_700_000_000n);
+
+    const event = parseAnchorEventFromLogs([
+      "Program log: Instruction: UpdateOdds",
+      `Program data: ${payload.toString("base64")}`,
+    ]);
+
+    expect(event).toEqual({
+      type: "OddsUpdated",
+      authority,
+      matchId: "match_1",
+      oddsHome: 6500,
+      oddsAway: 3000,
+      oddsDraw: 500,
+      updatedAt: 1_700_000_000n,
+    });
+  });
+
+  it("parses canonical BetSettled Anchor logs", () => {
+    const authority = new PublicKey("He5N26TPqsKvbG1UJgj5QgVrEroz4hMjPdytMvx677AA");
+    const user = new PublicKey("9xQeWvG816bUx9EPfNQht9C5WmrVKVdkVmv4s1KQTj4G");
+    const bet = deriveBetPda("match_1", user, 9);
+    const payload = buildBetSettledPayload(authority, user, "match_1", bet, 1, 6400, 6300, 2, false, 1_700_000_060n);
+
+    const event = parseAnchorEventFromLogs([
+      "Program log: Instruction: SettleBet",
+      `Program data: ${payload.toString("base64")}`,
+    ]);
+
+    expect(event).toEqual({
+      type: "BetSettled",
+      authority,
+      user,
+      matchId: "match_1",
+      bet,
+      direction: 1,
+      oddsAtEntry: 6400,
+      oddsAtExpiryHome: 6300,
+      status: 2,
+      won: false,
+      settledAt: 1_700_000_060n,
+    });
+  });
+
+  it("returns null when logs do not contain a known Anchor event", () => {
+    expect(parseAnchorEventFromLogs(["Program log: no canonical event"])).toBeNull();
+  });
 });
 
 const PUBLIC_PROGRAM_ID = "6BVWCCQDjQDcjQYhmbzJ9DFWY9LyDojM3mYoWivrASaG";
+
+function writeString(value: string): Buffer {
+  const bytes = Buffer.from(value, "utf8");
+  const length = Buffer.alloc(4);
+  length.writeUInt32LE(bytes.length);
+  return Buffer.concat([length, bytes]);
+}
+
+function writeU16(value: number): Buffer {
+  const bytes = Buffer.alloc(2);
+  bytes.writeUInt16LE(value);
+  return bytes;
+}
+
+function writeI64(value: bigint): Buffer {
+  const bytes = Buffer.alloc(8);
+  bytes.writeBigInt64LE(value);
+  return bytes;
+}
+
+function buildOddsUpdatedPayload(
+  authority: PublicKey,
+  matchId: string,
+  oddsHome: number,
+  oddsAway: number,
+  oddsDraw: number,
+  updatedAt: bigint,
+): Buffer {
+  return Buffer.concat([
+    Buffer.from([156, 39, 18, 117, 46, 12, 46, 218]),
+    authority.toBuffer(),
+    writeString(matchId),
+    writeU16(oddsHome),
+    writeU16(oddsAway),
+    writeU16(oddsDraw),
+    writeI64(updatedAt),
+  ]);
+}
+
+function buildBetSettledPayload(
+  authority: PublicKey,
+  user: PublicKey,
+  matchId: string,
+  bet: PublicKey,
+  direction: number,
+  oddsAtEntry: number,
+  oddsAtExpiryHome: number,
+  status: number,
+  won: boolean,
+  settledAt: bigint,
+): Buffer {
+  return Buffer.concat([
+    Buffer.from([57, 145, 224, 160, 62, 119, 227, 206]),
+    authority.toBuffer(),
+    user.toBuffer(),
+    writeString(matchId),
+    bet.toBuffer(),
+    Buffer.from([direction]),
+    writeU16(oddsAtEntry),
+    writeU16(oddsAtExpiryHome),
+    Buffer.from([status, won ? 1 : 0]),
+    writeI64(settledAt),
+  ]);
+}

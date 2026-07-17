@@ -27,8 +27,27 @@ pub mod oracle_adapter {
         match_account.updated_at = Clock::get()?.unix_timestamp;
         match_account.bump = ctx.bumps.match_account;
 
+        emit!(OddsUpdated {
+            authority: match_account.authority,
+            match_id: match_account.match_id.clone(),
+            odds_home: match_account.odds_home,
+            odds_away: match_account.odds_away,
+            odds_draw: match_account.odds_draw,
+            updated_at: match_account.updated_at,
+        });
+
         Ok(())
     }
+}
+
+#[event]
+pub struct OddsUpdated {
+    pub authority: Pubkey,
+    pub match_id: String,
+    pub odds_home: u16,
+    pub odds_away: u16,
+    pub odds_draw: u16,
+    pub updated_at: i64,
 }
 
 #[derive(Accounts)]
