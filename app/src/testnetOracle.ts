@@ -298,6 +298,20 @@ export function buildUserBetFilters(user: PublicKey) {
   ];
 }
 
+export function buildMatchAccountFilters() {
+  return [{ dataSize: MATCH_ACCOUNT_SIZE }];
+}
+
+export function formatTokenUnits(amount: bigint): string {
+  const whole = amount / 1_000_000n;
+  const fraction = amount % 1_000_000n;
+  if (fraction === 0n) {
+    return whole.toString();
+  }
+
+  return `${whole}.${fraction.toString().padStart(6, "0").replace(/0+$/, "")}`;
+}
+
 export function buildMintToInstruction(
   mint: PublicKey,
   destination: PublicKey,

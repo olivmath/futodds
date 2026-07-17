@@ -87,7 +87,7 @@ pub mod betting_engine {
 
             let match_id = bet.match_id.as_bytes();
             let seeds: &[&[u8]] = &[b"escrow", match_id, &[ctx.bumps.vault_authority]];
-            let signer_seeds = &[&seeds[..]];
+            let signer_seeds = &[seeds];
 
             token::transfer(
                 CpiContext::new_with_signer(

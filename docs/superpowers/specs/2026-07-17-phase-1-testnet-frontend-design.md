@@ -7,8 +7,8 @@
 | `oracle-adapter` | Done | Testnet program id: `6BVWCCQDjQDcjQYhmbzJ9DFWY9LyDojM3mYoWivrASaG` |
 | `betting-engine` | Done | Program id in code/config: `GoccKzkMS5BWRmrbLdGKzqKUUcksZB3DftW82F7boCoQ` |
 | Rust tests | Done | Phase 0, `place_bet`, and `settle_bet` covered with LiteSVM tests |
-| Browser app | Partial | Can create/update odds, place bets, fetch bets, and settle bets |
-| Product readiness | Not done | Still has test mint/fund actions and manual token account setup |
+| Browser app | Done for Phase 1 polish | Can create/update odds, list matches, create wallet ATA, show balances, place bets, fetch bets, and settle bets |
+| Product readiness | Partial | Frontend no longer exposes fake vault funding; real liquidity still requires Phase 2 pool integration |
 
 ## Goal
 
@@ -69,7 +69,7 @@ Phase 0 oracle controls.
 | Control | Status | Behavior |
 |---|---|
 | Match input | Done | Uses the current `matchId` and fetched `MatchAccount` |
-| Match listing | Missing | Needs `getProgramAccounts(PROGRAM_ID)` list of `MatchAccount`s |
+| Match listing | Done | Uses `getProgramAccounts(PROGRAM_ID)` list of `MatchAccount`s |
 | Direction | Done | `UP` or `DOWN` |
 | Window | Done | `60`, `300`, `600`, `900` seconds |
 | Amount | Done | Test USDC amount, converted to 6-decimal token units |
@@ -77,11 +77,11 @@ Phase 0 oracle controls.
 | Place bet | Done | Sends `place_bet` through the connected wallet |
 | Fetch bets | Done | Lists `Bet` accounts owned by the connected wallet |
 | Settle bet | Done | Sends `settle_bet` for an open bet |
-| Wallet USDC balance | Missing | Needs token balance display for wallet ATA |
-| Vault balance | Missing | Needs token balance display for vault ATA |
-| Create token account | Missing in UI | Helper work started, but `App.tsx` still asks for manual setup |
-| Mint test USDC | Present, dev-only | Should move out of product path |
-| Fund vault | Present, dev-only | Should be removed from product path after pool integration |
+| Wallet USDC balance | Done | Token readiness and status strip display wallet ATA balance |
+| Vault balance | Done | Token readiness and status strip display escrow vault ATA balance |
+| Create token account | Done | UI can create the wallet ATA and auto-adds ATA creation before `place_bet` when missing |
+| Mint test USDC | Dev-only | Labeled `Dev: mint test USDC` and separated from bet placement |
+| Fund vault | Removed | UI no longer mints directly into the vault |
 
 ## Data Flow
 
@@ -102,7 +102,7 @@ Wallet
 |---|---|
 | Wallet not connected | Disable transaction buttons |
 | No fetched match | Block bet placement until a match exists |
-| Missing token account | Currently shows clear error; product UI should create ATA |
+| Missing token account | UI creates the ATA through a dedicated action or before `place_bet` |
 | Insufficient token balance | Show failed transaction in run log |
 | Invalid window | Disable invalid options |
 | Amount below 1 test USDC | Disable place bet |
@@ -160,8 +160,8 @@ see status update and payout behavior
 
 | Gap | Why it matters | Target |
 |---|---|---|
-| Remove fake vault funding | It creates test money and hides liquidity risk | Fase 2 pool integration |
-| Show balances | User should see wallet and vault/pool state without terminal | Frontend Phase 1 polish |
-| List matches | User should not need to know `matchId` manually | Frontend Phase 1 polish |
-| Create token account in app | First-time wallet should work without setup scripts | Frontend Phase 1 polish |
-| Rename dev UI actions | Product UI should not expose `Mint test USDC` / `Fund vault` as normal flow | Frontend Phase 1 polish |
+| Remove fake vault funding | Done in frontend; full liquidity model remains Phase 2 | Fase 2 pool integration |
+| Show balances | Done | Frontend Phase 1 polish |
+| List matches | Done | Frontend Phase 1 polish |
+| Create token account in app | Done | Frontend Phase 1 polish |
+| Rename dev UI actions | Done; only wallet mint remains as `Dev: mint test USDC` | Frontend Phase 1 polish |

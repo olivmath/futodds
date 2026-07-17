@@ -94,7 +94,7 @@ h2 {
 .status-strip {
   display: grid;
   gap: 10px;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   margin: 14px 0;
 }
 
@@ -152,10 +152,21 @@ h2 {
   margin-bottom: 16px;
 }
 
+.panel-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 .ghost-button {
   background: transparent;
   border: 1px solid #b7c5b3;
   color: #17201c;
+}
+
+.dev-button {
+  background: #69471f;
 }
 
 .field {
@@ -205,6 +216,51 @@ select {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+}
+
+.resource-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-bottom: 14px;
+}
+
+.resource-card {
+  background: #eef4ec;
+  border: 1px solid #d5ded1;
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px;
+}
+
+.resource-card span {
+  color: #51645e;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.resource-card strong {
+  color: #17201c;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.resource-card code,
+.match-entry code {
+  color: #5b7069;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.helper-text {
+  color: #52645f;
+  font-size: 13px;
+  line-height: 1.45;
+  margin-top: 12px;
 }
 
 .checks {
@@ -280,6 +336,37 @@ pre {
   gap: 10px;
 }
 
+.match-list {
+  display: grid;
+  gap: 10px;
+}
+
+.match-entry {
+  align-items: center;
+  background: #eef4ec;
+  border: 1px solid #d5ded1;
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: auto minmax(0, 1fr);
+  padding: 12px;
+}
+
+.match-entry div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.match-entry strong {
+  overflow-wrap: anywhere;
+}
+
+.match-entry span {
+  color: #52645f;
+  font-size: 13px;
+}
+
 .bet-entry {
   display: grid;
   gap: 10px;
@@ -325,5 +412,19 @@ pre {
 
   .odds-grid {
     grid-template-columns: 1fr;
+  }
+
+  .resource-grid,
+  .match-entry {
+    grid-template-columns: 1fr;
+  }
+
+  .panel-header {
+    align-items: stretch;
+    display: grid;
+  }
+
+  .panel-header-actions {
+    justify-content: stretch;
   }
 }

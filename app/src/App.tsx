@@ -9,15 +9,19 @@ import {
   PROGRAM_ID,
   TEST_USDC_MINT,
   TESTNET_RPC_URL,
+  buildCreateAssociatedTokenAccountInstruction,
+  buildMatchAccountFilters,
   buildMintToInstruction,
   buildPlaceBetInstruction,
   buildSettleBetInstruction,
   buildUpdateOddsInstruction,
+  buildUserBetFilters,
   decodeBetAccount,
   decodeMatchAccount,
   deriveAssociatedTokenAddress,
   deriveMatchPda,
   deriveVaultAuthorityPda,
+  formatTokenUnits,
   oddsAreValid,
   oddsSum,
   resolveWalletPublicKey,
@@ -60,6 +64,18 @@ type ListedBet = {
   account: BetAccount;
 };
 
+type ListedMatch = {
+  pda: PublicKey;
+  account: MatchAccount;
+};
+
+type BalanceSnapshot = {
+  walletAta: PublicKey | null;
+  walletBalance: bigint | null;
+  vaultAta: PublicKey | null;
+  vaultBalance: bigint | null;
+};
+
 const initialChecks: Check[] = [
   { label: "Create match", state: "idle", detail: "Run update_odds on a new match ID." },
   { label: "Update odds", state: "idle", detail: "Run update_odds again on the same PDA." },
@@ -82,6 +98,13 @@ function App() {
   const [nonce, setNonce] = useState(() => Math.floor(Date.now() / 1000));
   const [settleOdds, setSettleOdds] = useState(6700);
   const [bets, setBets] = useState<ListedBet[]>([]);
+  const [matches, setMatches] = useState<ListedMatch[]>([]);
+  const [balances, setBalances] = useState<BalanceSnapshot>({
+    walletAta: null,
+    walletBalance: null,
+    vaultAta: null,
+    vaultBalance: null,
+  });
   const [isBusy, setIsBusy] = useState(false);
   const [log, setLog] = useState<LogEntry[]>([
     {
@@ -210,6 +233,86 @@ function App() {
     [matchId, sendTransaction, walletPublicKey],
   );
 
+  const refreshBalances = useCallback(async () => {
+    setIsBusy(true);
+    try {
+      if (!walletPublicKey) {
+        throw new Error("Connect a wallet first.");
+      }
+      if (!parsedMint) {
+        throw new Error("Enter a valid test USDC mint.");
+      }
+
+      const walletAta = deriveAssociatedTokenAddress(walletPublicKey, parsedMint);
+      const vaultAta = deriveAssociatedTokenAddress(deriveVaultAuthorityPda(matchId), parsedMint);
+
+      const [walletToken, vaultToken] = await Promise.all([
+        readTokenBalance(connection, walletAta),
+        readTokenBalance(connection, vaultAta),
+      ]);
+
+      setBalances({
+        walletAta,
+        walletBalance: walletToken,
+        vaultAta,
+        vaultBalance: vaultToken,
+      });
+      pushLog({
+        title: "Balances refreshed",
+        body: `Wallet ${formatBalance(walletToken)} / vault ${formatBalance(vaultToken)}`,
+        kind: "success",
+      });
+    } catch (error) {
+      pushLog({
+        title: "balance refresh failed",
+        body: error instanceof Error ? error.message : String(error),
+        kind: "error",
+      });
+    } finally {
+      setIsBusy(false);
+    }
+  }, [connection, matchId, parsedMint, pushLog, walletPublicKey]);
+
+  const listMatches = useCallback(async () => {
+    setIsBusy(true);
+    try {
+      const accounts = await connection.getProgramAccounts(PROGRAM_ID, {
+        commitment: "confirmed",
+        filters: buildMatchAccountFilters(),
+      });
+      const decoded = accounts
+        .map(({ pubkey, account: matchAccount }) => ({
+          pda: pubkey,
+          account: decodeMatchAccount(matchAccount.data),
+        }))
+        .sort((left, right) => Number(right.account.updatedAt - left.account.updatedAt));
+
+      setMatches(decoded);
+      pushLog({ title: "Matches listed", body: `${decoded.length} match(es) found.`, kind: "success" });
+    } catch (error) {
+      pushLog({
+        title: "list matches failed",
+        body: error instanceof Error ? error.message : String(error),
+        kind: "error",
+      });
+    } finally {
+      setIsBusy(false);
+    }
+  }, [connection, pushLog]);
+
+  const selectMatch = useCallback(
+    (listed: ListedMatch) => {
+      setMatchId(listed.account.matchId);
+      setAccount(listed.account);
+      pushLog({
+        title: "Match selected",
+        body: `${listed.account.matchId} / ${listed.pda.toBase58()}`,
+        kind: "info",
+      });
+    },
+    [pushLog],
+  );
+
   const runCreateOrUpdate = useCallback(async () => {
     setIsBusy(true);
     try {
@@ -323,22 +426,25 @@ function App() {
 
       const userTokenAccount = deriveAssociatedTokenAddress(walletPublicKey, parsedMint);
       const tokenInfo = await connection.getAccountInfo(userTokenAccount, "confirmed");
+      const transaction = new Transaction();
       if (!tokenInfo) {
-        throw new Error(`Create/fund your token account first: ${userTokenAccount.toBase58()}`);
+        transaction.add(
+          buildCreateAssociatedTokenAccountInstruction(walletPublicKey, walletPublicKey, parsedMint),
+        );
       }
-
-      const signature = await sendTransaction(
-        new Transaction().add(
-          buildPlaceBetInstruction(walletPublicKey, matchId, parsedMint, {
-            direction,
-            windowSecs,
-            amount,
-            nonce,
-          }),
-        ),
+      transaction.add(
+        buildPlaceBetInstruction(walletPublicKey, matchId, parsedMint, {
+          direction,
+          windowSecs,
+          amount,
+          nonce,
+        }),
       );
+
+      const signature = await sendTransaction(transaction);
       pushLog({ title: "Bet placed", body: `Tx ${signature}`, kind: "success" });
       setNonce((current) => current + 1);
+      await refreshBalances();
     } catch (error) {
       pushLog({
         title: "place_bet failed",
@@ -357,6 +463,7 @@ function App() {
     nonce,
     parsedMint,
     pushLog,
+    refreshBalances,
     sendTransaction,
     walletPublicKey,
     windowSecs,
@@ -371,10 +478,7 @@ function App() {
 
       const accounts = await connection.getProgramAccounts(BETTING_ENGINE_PROGRAM_ID, {
         commitment: "confirmed",
-        filters: [
-          { dataSize: 157 },
-          { memcmp: { offset: 8, bytes: walletPublicKey.toBase58() } },
-        ],
+        filters: buildUserBetFilters(walletPublicKey),
       });
       const decoded = accounts.map(({ pubkey, account: betAccount }) => ({
         pda: pubkey,
@@ -418,6 +522,7 @@ function App() {
         );
         pushLog({ title: "Bet settled", body: `Tx ${signature}`, kind: "success" });
         await fetchBets();
+        await refreshBalances();
       } catch (error) {
         pushLog({
           title: "settle_bet failed",
@@ -428,8 +533,48 @@ function App() {
         setIsBusy(false);
       }
     },
-    [fetchBets, parsedMint, pushLog, sendTransaction, settleOdds, walletPublicKey],
+    [fetchBets, parsedMint, pushLog, refreshBalances, sendTransaction, settleOdds, walletPublicKey],
   );
+
+  const createWalletTokenAccount = useCallback(async () => {
+    setIsBusy(true);
+    try {
+      if (!walletPublicKey) {
+        throw new Error("Connect a wallet first.");
+      }
+      if (!parsedMint) {
+        throw new Error("Enter a valid test USDC mint.");
+      }
+
+      const userTokenAccount = deriveAssociatedTokenAddress(walletPublicKey, parsedMint);
+      const tokenInfo = await connection.getAccountInfo(userTokenAccount, "confirmed");
+      if (tokenInfo) {
+        pushLog({
+          title: "Token account already exists",
+          body: userTokenAccount.toBase58(),
+          kind: "info",
+        });
+        await refreshBalances();
+        return;
+      }
+
+      const signature = await sendTransaction(
+        new Transaction().add(
+          buildCreateAssociatedTokenAccountInstruction(walletPublicKey, walletPublicKey, parsedMint),
+        ),
+      );
+      pushLog({ title: "Token account created", body: `Tx ${signature}`, kind: "success" });
+      await refreshBalances();
+    } catch (error) {
+      pushLog({
+        title: "create token account failed",
+        body: error instanceof Error ? error.message : String(error),
+        kind: "error",
+      });
+    } finally {
+      setIsBusy(false);
+    }
+  }, [connection, parsedMint, pushLog, refreshBalances, sendTransaction, walletPublicKey]);
 
   const mintToWallet = useCallback(async () => {
     setIsBusy(true);
@@ -443,59 +588,27 @@ function App() {
 
       const userTokenAccount = deriveAssociatedTokenAddress(walletPublicKey, parsedMint);
       const tokenInfo = await connection.getAccountInfo(userTokenAccount, "confirmed");
+      const transaction = new Transaction();
       if (!tokenInfo) {
-        throw new Error(`Create your token account first: ${userTokenAccount.toBase58()}`);
+        transaction.add(
+          buildCreateAssociatedTokenAccountInstruction(walletPublicKey, walletPublicKey, parsedMint),
+        );
       }
+      transaction.add(buildMintToInstruction(parsedMint, userTokenAccount, walletPublicKey, 100_000_000n));
 
-      const signature = await sendTransaction(
-        new Transaction().add(
-          buildMintToInstruction(parsedMint, userTokenAccount, walletPublicKey, 100_000_000n),
-        ),
-      );
-      pushLog({ title: "Test USDC minted", body: `Tx ${signature}`, kind: "success" });
+      const signature = await sendTransaction(transaction);
+      pushLog({ title: "Dev test USDC minted", body: `Tx ${signature}`, kind: "success" });
+      await refreshBalances();
     } catch (error) {
       pushLog({
-        title: "mint_to wallet failed",
+        title: "dev mint failed",
         body: error instanceof Error ? error.message : String(error),
         kind: "error",
       });
     } finally {
       setIsBusy(false);
     }
-  }, [connection, parsedMint, pushLog, sendTransaction, walletPublicKey]);
-
-  const fundVault = useCallback(async () => {
-    setIsBusy(true);
-    try {
-      if (!walletPublicKey) {
-        throw new Error("Connect a wallet first.");
-      }
-      if (!parsedMint) {
-        throw new Error("Enter a valid test USDC mint.");
-      }
-
-      const vault = deriveAssociatedTokenAddress(deriveVaultAuthorityPda(matchId), parsedMint);
-      const vaultInfo = await connection.getAccountInfo(vault, "confirmed");
-      if (!vaultInfo) {
-        throw new Error("Place a bet first so the vault token account exists.");
-      }
-
-      const signature = await sendTransaction(
-        new Transaction().add(
-          buildMintToInstruction(parsedMint, vault, walletPublicKey, 100_000_000n),
-        ),
-      );
-      pushLog({ title: "Vault funded", body: `Tx ${signature}`, kind: "success" });
-    } catch (error) {
-      pushLog({
-        title: "fund vault failed",
-        body: error instanceof Error ? error.message : String(error),
-        kind: "error",
-      });
-    } finally {
-      setIsBusy(false);
-    }
-  }, [connection, matchId, parsedMint, pushLog, sendTransaction, walletPublicKey]);
+  }, [connection, parsedMint, pushLog, refreshBalances, sendTransaction, walletPublicKey]);
 
   const updateOddsField = (field: keyof OddsInput, value: string) => {
     const parsed = Number(value);
@@ -509,8 +622,8 @@ function App() {
     <main className="app-shell">
       <section className="topbar">
         <div>
-          <p className="kicker">FutOdds / Oracle Adapter</p>
-          <h1>Phase 0 testnet console</h1>
+          <p className="kicker">FutOdds / Testnet Console</p>
+          <h1>Betting testnet console</h1>
         </div>
         <div className="wallet-actions">
           <button type="button" onClick={() => void connectWallet("phantom")}>
@@ -524,8 +637,11 @@ function App() {
 
       <section className="status-strip">
         <StatusItem label="Cluster" value="testnet" />
-        <StatusItem label="Program" value={shorten(PROGRAM_ID.toBase58())} />
+        <StatusItem label="Oracle" value={shorten(PROGRAM_ID.toBase58())} />
+        <StatusItem label="Betting" value={shorten(BETTING_ENGINE_PROGRAM_ID.toBase58())} />
         <StatusItem label="Wallet" value={walletPublicKey ? shorten(walletPublicKey.toBase58()) : "not connected"} />
+        <StatusItem label="Wallet USDC" value={formatBalance(balances.walletBalance)} />
+        <StatusItem label="Vault USDC" value={formatBalance(balances.vaultBalance)} />
         <StatusItem label="Odds sum" value={`${sum} ${oddsAreValid(odds) ? "OK" : "INVALID"}`} />
       </section>
 
@@ -533,9 +649,14 @@ function App() {
         <div className="panel controls-panel">
           <div className="panel-header">
             <h2>Inputs</h2>
-            <button className="ghost-button" type="button" onClick={() => void fetchMatch()}>
-              Fetch PDA
-            </button>
+            <div className="panel-header-actions">
+              <button className="ghost-button" type="button" onClick={() => void fetchMatch()}>
+                Fetch PDA
+              </button>
+              <button className="ghost-button" type="button" disabled={isBusy} onClick={() => void listMatches()}>
+                List matches
+              </button>
+            </div>
           </div>
 
           <label className="field">
@@ -584,6 +705,59 @@ function App() {
                 <p>{check.detail}</p>
               </div>
             ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="workspace lower">
+        <div className="panel">
+          <div className="panel-header">
+            <h2>Token readiness</h2>
+            <button className="ghost-button" type="button" disabled={!hasWallet || isBusy || !parsedMint} onClick={() => void refreshBalances()}>
+              Refresh balances
+            </button>
+          </div>
+          <div className="resource-grid">
+            <ResourceItem label="Wallet ATA" address={balances.walletAta?.toBase58() ?? "not checked"} value={formatBalance(balances.walletBalance)} />
+            <ResourceItem label="Escrow vault ATA" address={balances.vaultAta?.toBase58() ?? "not checked"} value={formatBalance(balances.vaultBalance)} />
+          </div>
+          <div className="button-row">
+            <button disabled={!hasWallet || isBusy || !parsedMint} onClick={() => void createWalletTokenAccount()}>
+              Create token account
+            </button>
+            <button className="dev-button" disabled={!hasWallet || isBusy || !parsedMint} onClick={() => void mintToWallet()}>
+              Dev: mint test USDC
+            </button>
+          </div>
+          <p className="helper-text">
+            Vault funding is not exposed here. Real product liquidity belongs in the pool phase.
+          </p>
+        </div>
+
+        <div className="panel">
+          <div className="panel-header">
+            <h2>Listed matches</h2>
+            <span className="small-label">{matches.length} found</span>
+          </div>
+          <div className="match-list">
+            {matches.length === 0 ? (
+              <pre>{JSON.stringify({ status: "not listed" }, null, 2)}</pre>
+            ) : (
+              matches.map((listed) => (
+                <article className="match-entry" key={listed.pda.toBase58()}>
+                  <button className="ghost-button" type="button" onClick={() => selectMatch(listed)}>
+                    Select
+                  </button>
+                  <div>
+                    <strong>{listed.account.matchId}</strong>
+                    <span>
+                      {listed.account.oddsHome}/{listed.account.oddsAway}/{listed.account.oddsDraw}
+                    </span>
+                    <code>{shorten(listed.pda.toBase58())}</code>
+                  </div>
+                </article>
+              ))
+            )}
           </div>
         </div>
       </section>
@@ -660,20 +834,17 @@ function App() {
               <input type="number" min="0" max="10000" value={settleOdds} onChange={(event) => setSettleOdds(Number(event.target.value))} />
             </label>
             <div className="field derived-field">
-              <span>Vault</span>
+              <span>Escrow authority</span>
               <strong>{parsedMint ? shorten(deriveVaultAuthorityPda(matchId).toBase58()) : "mint required"}</strong>
             </div>
           </div>
 
           <div className="button-row">
-            <button disabled={!hasWallet || isBusy || !parsedMint} onClick={() => void mintToWallet()}>
-              Mint test USDC
-            </button>
             <button disabled={!hasWallet || isBusy || !account || !parsedMint} onClick={() => void placeBet()}>
               Place bet
             </button>
-            <button disabled={!hasWallet || isBusy || !parsedMint} onClick={() => void fundVault()}>
-              Fund vault
+            <button className="ghost-button" disabled={!hasWallet || isBusy || !parsedMint} onClick={() => void refreshBalances()}>
+              Refresh balances
             </button>
           </div>
         </div>
@@ -712,8 +883,32 @@ function StatusItem({ label, value }: { label: string; value: string }) {
   );
 }
 
+function ResourceItem({ label, address, value }: { label: string; address: string; value: string }) {
+  return (
+    <div className="resource-card">
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <code>{address}</code>
+    </div>
+  );
+}
+
 function shorten(value: string) {
   return `${value.slice(0, 4)}...${value.slice(-4)}`;
+}
+
+async function readTokenBalance(connection: Connection, tokenAccount: PublicKey): Promise<bigint | null> {
+  const info = await connection.getAccountInfo(tokenAccount, "confirmed");
+  if (!info) {
+    return null;
+  }
+
+  const balance = await connection.getTokenAccountBalance(tokenAccount, "confirmed");
+  return BigInt(balance.value.amount);
+}
+
+function formatBalance(amount: bigint | null) {
+  return amount === null ? "missing" : formatTokenUnits(amount);
 }
 
 function stateLabel(state: CheckState) {

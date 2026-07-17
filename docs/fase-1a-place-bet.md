@@ -8,7 +8,7 @@ Concluida no programa `betting-engine` e coberta por testes Rust em `programs/be
 |---|---|
 | **On-chain** | Implementado |
 | **Testes Rust** | Implementados |
-| **Frontend** | Parcial: envia `place_bet`, mas ainda usa setup manual/fake para token e vault |
+| **Frontend** | Implementado: envia `place_bet`, cria ATA da wallet, lista matches e mostra saldos |
 | **Produto real** | Ainda depende da Fase 2 para pool de liquidez real |
 
 ## Objetivo
@@ -82,7 +82,13 @@ pub struct Bet {
 | Falta | Motivo |
 |---|---|
 | Pool real de liquidez | Fase 1 usa escrow por match; Fase 2 troca para pool |
-| Remover `Fund vault` fake da UI | Hoje a UI ainda permite mintar token direto no vault para teste |
-| Criar ATA pelo app | Helper existe em andamento, mas `App.tsx` ainda pede setup manual |
-| Mostrar saldo na UI | Ainda nao aparece saldo USDC da wallet/vault |
-| Listar jogos na UI | Ainda busca por `matchId`; falta listagem de `MatchAccount` |
+| Oracle/backend de liquidacao | Settlement ainda recebe odds de expiracao manualmente |
+
+## Frontend Resolvido
+
+| Item | Evidencia |
+|---|---|
+| `Fund vault` fake removido | `app/src/App.tsx` nao expoe mint direto para vault |
+| Criar ATA pelo app | Botao `Create token account` e criacao automatica antes de `place_bet` |
+| Mostrar saldo na UI | `Token readiness` e status strip mostram wallet/vault USDC |
+| Listar jogos na UI | `List matches` usa `getProgramAccounts` para `MatchAccount` |

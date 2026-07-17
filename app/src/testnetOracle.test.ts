@@ -5,6 +5,7 @@ import {
   MATCH_ACCOUNT_SIZE,
   PROGRAM_ID,
   buildCreateAssociatedTokenAccountInstruction,
+  buildMatchAccountFilters,
   buildPlaceBetInstruction,
   buildSettleBetInstruction,
   buildUserBetFilters,
@@ -15,6 +16,7 @@ import {
   encodePlaceBetData,
   encodeSettleBetData,
   encodeUpdateOddsData,
+  formatTokenUnits,
   oddsAreValid,
   oddsSum,
   resolveWalletPublicKey,
@@ -133,6 +135,17 @@ describe("phase 0 oracle helpers", () => {
 
   it("documents match account size for frontend listing", () => {
     expect(MATCH_ACCOUNT_SIZE).toBe(95);
+  });
+
+  it("builds stable filters for match listing", () => {
+    expect(buildMatchAccountFilters()).toEqual([{ dataSize: 95 }]);
+  });
+
+  it("formats 6-decimal token balances for compact UI display", () => {
+    expect(formatTokenUnits(0n)).toBe("0");
+    expect(formatTokenUnits(1_000_000n)).toBe("1");
+    expect(formatTokenUnits(1_250_000n)).toBe("1.25");
+    expect(formatTokenUnits(123_456_789n)).toBe("123.456789");
   });
 
   it("converts test USDC values to 6-decimal token units", () => {

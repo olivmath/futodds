@@ -66,5 +66,11 @@ Backend consegue liquidar a aposta comparando odds entry vs expiry.
 |---|---|
 | Oracle/backend de liquidacao | A UI recebe `settleOdds` manualmente |
 | Liquidez real | Fase 1 exige vault com saldo suficiente para pagar 1.8x |
-| Remover funding fake da UI | `Fund vault` ainda mascara falta de pool real |
 | UX de expiracao | UI nao calcula/filtra automaticamente bets expiradas |
+
+## Frontend Resolvido
+
+| Item | Evidencia |
+|---|---|
+| Funding fake removido | Botao `Fund vault` saiu da UI; vault depende do fluxo real da aposta/pool futuro |
+| Saldos visiveis | UI mostra saldo da wallet ATA e do vault escrow |
