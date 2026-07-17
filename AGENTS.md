@@ -42,6 +42,8 @@ Run `cargo test` before opening a PR. For program changes that affect IDLs or de
 
 The current history uses Conventional Commits, for example `feat: initial project setup with oracle-adapter program and architecture docs`. Continue using `type: short summary` such as `feat: add settle bet instruction` or `test: cover invalid odds sum`.
 
+For commits and GitHub operations in this repository, use `olivmath <olivmath@protonmail.com>`.
+
 PRs should include:
 
 - A short description of the behavior changed.
