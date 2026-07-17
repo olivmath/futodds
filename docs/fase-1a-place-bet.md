@@ -1,5 +1,16 @@
 # Fase 1a — place_bet com Escrow
 
+## Status
+
+Concluida no programa `betting-engine` e coberta por testes Rust em `programs/betting-engine/tests/test_betting.rs`.
+
+| Area | Estado |
+|---|---|
+| **On-chain** | Implementado |
+| **Testes Rust** | Implementados |
+| **Frontend** | Parcial: envia `place_bet`, mas ainda usa setup manual/fake para token e vault |
+| **Produto real** | Ainda depende da Fase 2 para pool de liquidez real |
+
 ## Objetivo
 User consegue apostar UP/DOWN com USDC depositado num vault do program.
 
@@ -9,16 +20,21 @@ User consegue apostar UP/DOWN com USDC depositado num vault do program.
 |---|---|
 | **Program** | `betting-engine` |
 | **PDA Bet** | seeds: `["bet", match_id, user, nonce]` |
-| **PDA Vault** | seeds: `["escrow", match_id]` (token account USDC) |
-| **Instruction** | `place_bet(direction, window_secs, amount)` |
+| **PDA Vault authority** | seeds: `["escrow", match_id]` |
+| **Vault token account** | ATA do PDA `["escrow", match_id]` para o mint USDC |
+| **Instruction** | `place_bet(direction, window_secs, amount, nonce)` |
 | **Payout** | Fixo 1.8x (hardcoded, substituido na fase 3a) |
 | **CPI** | Le Match PDA do oracle-adapter pra pegar odds_at_entry |
+| **Transferencia** | `user_token_account` → vault ATA via SPL Token |
+| **Minimo** | `1_000_000` unidades = 1 USDC com 6 decimais |
+| **Windows validos** | `60`, `300`, `600`, `900` segundos |
 
 ## Account Schema
 
 ```rust
 pub struct Bet {
     pub user: Pubkey,           // 32
+    pub authority: Pubkey,      // 32
     pub match_id: String,       // 4 + 36
     pub direction: u8,          // 1 (0=Up, 1=Down)
     pub odds_at_entry: u16,     // 2
@@ -45,7 +61,28 @@ pub struct Bet {
 
 ## Criterios de Sucesso
 
-- [ ] `anchor build` compila (2 programs)
-- [ ] `anchor test` — 5/5 novos + 4 anteriores passando
-- [ ] Bet PDA contem odds_at_entry lido do Match PDA
-- [ ] USDC transferido do user pro vault escrow
+- [x] `place_bet` implementado em `programs/betting-engine/src/lib.rs`
+- [x] Bet PDA contem `odds_at_entry` lido do `MatchAccount`
+- [x] Bet PDA guarda `authority` do oracle para uso no `settle_bet`
+- [x] USDC transferido do usuario para o vault escrow
+- [x] Vault ATA criado com `init_if_needed`
+- [x] Testes cobrem UP, DOWN, window invalido, amount abaixo do minimo e saldo insuficiente
+
+## Evidencia No Codigo
+
+| Arquivo | O que valida |
+|---|---|
+| `programs/betting-engine/src/lib.rs` | Instrucao `place_bet`, constraints, PDA seeds, transferencia SPL |
+| `programs/betting-engine/tests/test_betting.rs` | 5 testes de `place_bet` |
+| `app/src/App.tsx` | UI consegue montar e enviar `place_bet` |
+| `app/src/testnetOracle.ts` | Deriva PDAs/ATAs e codifica instrucao Anchor |
+
+## Pendencias De Produto
+
+| Falta | Motivo |
+|---|---|
+| Pool real de liquidez | Fase 1 usa escrow por match; Fase 2 troca para pool |
+| Remover `Fund vault` fake da UI | Hoje a UI ainda permite mintar token direto no vault para teste |
+| Criar ATA pelo app | Helper existe em andamento, mas `App.tsx` ainda pede setup manual |
+| Mostrar saldo na UI | Ainda nao aparece saldo USDC da wallet/vault |
+| Listar jogos na UI | Ainda busca por `matchId`; falta listagem de `MatchAccount` |

@@ -26,6 +26,9 @@ export const TEST_USDC_MINT = new PublicKey(
   "CDAQWBQ3DciCWQDtyczAWvTp3xuyuL2t273LSdffjxB",
 );
 
+export const MATCH_ACCOUNT_SIZE = 95;
+export const BET_ACCOUNT_SIZE = 157;
+
 export const UPDATE_ODDS_DISCRIMINATOR = Uint8Array.from([
   185, 97, 196, 202, 171, 32, 3, 160,
 ]);
@@ -265,6 +268,34 @@ export function buildSettleBetInstruction(
     ],
     data: encodeSettleBetData(oddsAtExpiryHome),
   });
+}
+
+export function buildCreateAssociatedTokenAccountInstruction(
+  payer: PublicKey,
+  owner: PublicKey,
+  mint: PublicKey,
+): TransactionInstruction {
+  const associatedTokenAccount = deriveAssociatedTokenAddress(owner, mint);
+
+  return new TransactionInstruction({
+    programId: ASSOCIATED_TOKEN_PROGRAM_ID,
+    keys: [
+      { pubkey: payer, isSigner: true, isWritable: true },
+      { pubkey: associatedTokenAccount, isSigner: false, isWritable: true },
+      { pubkey: owner, isSigner: false, isWritable: false },
+      { pubkey: mint, isSigner: false, isWritable: false },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+      { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+    ],
+    data: Buffer.alloc(0),
+  });
+}
+
+export function buildUserBetFilters(user: PublicKey) {
+  return [
+    { dataSize: BET_ACCOUNT_SIZE },
+    { memcmp: { offset: 8, bytes: user.toBase58() } },
+  ];
 }
 
 export function buildMintToInstruction(

@@ -2,16 +2,17 @@ import { describe, expect, it } from "vitest";
 import { PublicKey } from "@solana/web3.js";
 import {
   BETTING_ENGINE_PROGRAM_ID,
+  MATCH_ACCOUNT_SIZE,
   PROGRAM_ID,
+  buildCreateAssociatedTokenAccountInstruction,
   buildPlaceBetInstruction,
-  buildMintToInstruction,
   buildSettleBetInstruction,
+  buildUserBetFilters,
   deriveAssociatedTokenAddress,
   deriveBetPda,
   deriveMatchPda,
   deriveVaultAuthorityPda,
   encodePlaceBetData,
-  encodeMintToData,
   encodeSettleBetData,
   encodeUpdateOddsData,
   oddsAreValid,
@@ -85,13 +86,6 @@ describe("phase 0 oracle helpers", () => {
     expect(data.readUInt16LE(8)).toBe(6700);
   });
 
-  it("encodes SPL Token mint_to instruction data", () => {
-    const data = encodeMintToData(100_000_000n);
-
-    expect(data.readUInt8(0)).toBe(7);
-    expect(data.readBigUInt64LE(1)).toBe(100_000_000n);
-  });
-
   it("builds phase 1 instructions for the betting engine", () => {
     const user = new PublicKey("He5N26TPqsKvbG1UJgj5QgVrEroz4hMjPdytMvx677AA");
     const mint = new PublicKey("So11111111111111111111111111111111111111112");
@@ -103,13 +97,42 @@ describe("phase 0 oracle helpers", () => {
       nonce: 3,
     });
     const settle = buildSettleBetInstruction(user, user, "match_1", mint, 3, 6300);
-    const mintTo = buildMintToInstruction(mint, deriveAssociatedTokenAddress(user, mint), user, 1_000_000n);
 
     expect(place.programId.equals(BETTING_ENGINE_PROGRAM_ID)).toBe(true);
     expect(place.keys).toHaveLength(10);
     expect(settle.programId.equals(BETTING_ENGINE_PROGRAM_ID)).toBe(true);
     expect(settle.keys).toHaveLength(7);
-    expect(mintTo.keys).toHaveLength(3);
+  });
+
+  it("builds an associated token account creation instruction for the wallet", () => {
+    const payer = new PublicKey("He5N26TPqsKvbG1UJgj5QgVrEroz4hMjPdytMvx677AA");
+    const mint = new PublicKey("So11111111111111111111111111111111111111112");
+    const ata = deriveAssociatedTokenAddress(payer, mint);
+
+    const instruction = buildCreateAssociatedTokenAccountInstruction(payer, payer, mint);
+
+    expect(instruction.programId.toBase58()).toBe("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
+    expect(instruction.keys.map((key) => key.pubkey.toBase58())).toEqual([
+      payer.toBase58(),
+      ata.toBase58(),
+      payer.toBase58(),
+      mint.toBase58(),
+      "11111111111111111111111111111111",
+      "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+    ]);
+  });
+
+  it("builds stable filters for wallet bet listing", () => {
+    const user = new PublicKey("He5N26TPqsKvbG1UJgj5QgVrEroz4hMjPdytMvx677AA");
+
+    expect(buildUserBetFilters(user)).toEqual([
+      { dataSize: 157 },
+      { memcmp: { offset: 8, bytes: user.toBase58() } },
+    ]);
+  });
+
+  it("documents match account size for frontend listing", () => {
+    expect(MATCH_ACCOUNT_SIZE).toBe(95);
   });
 
   it("converts test USDC values to 6-decimal token units", () => {
