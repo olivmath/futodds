@@ -105,6 +105,13 @@ npm test
 npm start
 ```
 
+For local backend development with automatic restart:
+
+```bash
+cd backend
+pnpm dev
+```
+
 Endpoints:
 
 | Method | Route |
