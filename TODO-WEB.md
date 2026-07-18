@@ -59,6 +59,12 @@ Don't:     - pure #000 backgrounds (use #081310)
 - [ ] `next/font/google`: Inter (variable) + JetBrains Mono (variable), wired as CSS variables
 
 ### Phase B — Design tokens (before any section)
+
+> **Rule: the web brand IS `mobile-seeker/brand.md` (Volt Court), verbatim.**
+> No new palette, no new hues, no re-branding pass. Every token below comes
+> from that file; if web needs something brand.md doesn't define, extend
+> brand.md first, then consume it here.
+
 - [ ] Port Volt Court seeds from `mobile-seeker/brand.md` into `globals.css` CSS vars (dark-first; the light seeds exist in brand.md if a light mode is ever wanted — not for v1)
 - [ ] Map to Tailwind theme: `bg`, `surface`, `chip`, `fg`, `fg-muted`, `primary`, `primary-soft`, `down`, `series-cyan`, gradient `cta`
 - [ ] Copy `web/brand.md` → symlink-style pointer to `mobile-seeker/brand.md` (single source of truth; do NOT fork the palette)
