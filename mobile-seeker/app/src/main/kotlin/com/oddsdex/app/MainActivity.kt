@@ -1,17 +1,21 @@
 package com.oddsdex.app
 
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import com.oddsdex.app.core.Analytics
+import com.oddsdex.app.session.TradeSessionManager
 import com.oddsdex.app.ui.home.HomeScreen
 import com.oddsdex.app.ui.onboarding.OnboardingScreen
 import com.oddsdex.app.ui.onboarding.ReadyScreen
@@ -29,9 +33,16 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var walletSession: WalletSessionManager
 
+    @Inject
+    lateinit var tradeSession: TradeSessionManager
+
+    private val notificationPermission =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        requestNotificationPermission()
         // Must be constructed before the activity is RESUMED (MWA requirement)
         val sender = ActivityResultSender(this)
         val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -88,6 +99,26 @@ class MainActivity : ComponentActivity() {
                     else -> OnboardingScreen(onConnectWallet = connectWallet)
                 }
             }
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        tradeSession.appVisible = true
+    }
+
+    override fun onStop() {
+        tradeSession.appVisible = false
+        super.onStop()
+    }
+
+    /** Needed on Android 13+ so the trade-session notifications can show. */
+    private fun requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT < 33) return
+        val granted = checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
+        if (!granted) {
+            notificationPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
         }
     }
 

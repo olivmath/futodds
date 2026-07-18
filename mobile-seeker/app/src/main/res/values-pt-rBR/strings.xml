@@ -91,6 +91,11 @@
     <string name="address_copy">Copiar endereço</string>
     <string name="address_copied">Endereço copiado</string>
 
+    <string name="notif_channel_session">Posição aberta</string>
+    <string name="notif_channel_result">Resultados de trade</string>
+    <string name="notif_live_text">Odd %1$s · entrada %2$s · faltam %3$ds</string>
+    <string name="notif_close_now">Encerrar agora</string>
+
     <string name="back">Voltar</string>
     <string name="copy_address">Copiar endereço</string>
     <string name="profile_default_name">Trader</string>

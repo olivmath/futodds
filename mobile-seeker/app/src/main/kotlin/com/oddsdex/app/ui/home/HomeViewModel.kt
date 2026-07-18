@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.oddsdex.app.core.Analytics
 import com.oddsdex.app.demo.SimulatedTickSource
+import com.oddsdex.app.session.SettledTrade
+import com.oddsdex.app.session.TradeSessionManager
 import com.oddsdex.app.ui.chart.SeriesBuffer
 import com.oddsdex.app.ui.onboarding.Direction
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -12,6 +14,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
 
 /** Which team's odd series the terminal tracks and trades. */
@@ -125,13 +128,14 @@ data class HomeUiState(
  * WebSocket TickSource + on-chain positions when the backend lands (PRD §7).
  */
 @HiltViewModel
-class HomeViewModel @Inject constructor() : ViewModel() {
+class HomeViewModel @Inject constructor(
+    private val session: TradeSessionManager,
+) : ViewModel() {
 
     private var tickSource = SimulatedTickSource(baseOdd = HomeUiState.MATCHES.first().baseOdd)
     val chartBuffer = SeriesBuffer()
 
     private var tickJob: Job? = null
-    private var countdownJob: Job? = null
     private var resultDismissJob: Job? = null
 
     private val _state = MutableStateFlow(
@@ -141,6 +145,26 @@ class HomeViewModel @Inject constructor() : ViewModel() {
 
     init {
         startFeed()
+        // The open-position lifecycle lives in TradeSessionManager (it keeps
+        // running when the user leaves the app); the ViewModel just mirrors it.
+        viewModelScope.launch {
+            session.live.collect { live ->
+                _state.value = _state.value.copy(
+                    position = live?.let {
+                        HomePosition(
+                            direction = it.direction,
+                            entryOdd = it.entryOdd,
+                            stake = it.stake,
+                            windowSeconds = it.windowSeconds,
+                            remainingSeconds = it.remainingSeconds,
+                        )
+                    },
+                )
+            }
+        }
+        viewModelScope.launch {
+            session.settled.filterNotNull().collect { onSettled(it) }
+        }
     }
 
     /** Prefills history and streams live ticks for the selected match. */
@@ -216,36 +240,22 @@ class HomeViewModel @Inject constructor() : ViewModel() {
     fun onDirectionPicked(direction: Direction) {
         val current = _state.value
         if (current.position != null) return
-        val position = HomePosition(
+        _state.value = current.copy(lastResult = null)
+        session.open(
+            source = tickSource,
+            matchTitle = current.selectedMatch.title,
+            team = current.selectedMatch.nameOf(current.selectedSide),
             direction = direction,
-            entryOdd = tickSource.currentOdd,
             stake = current.stake,
             windowSeconds = current.windowSeconds,
-            remainingSeconds = current.windowSeconds,
         )
-        _state.value = current.copy(position = position, lastResult = null)
         Analytics.log(
             "position_open_attempted",
             mapOf("direction" to direction.name, "paper" to "true"),
         )
-        countdownJob = viewModelScope.launch {
-            for (remaining in position.windowSeconds - 1 downTo 0) {
-                delay(1_000)
-                val p = _state.value.position ?: return@launch
-                _state.value = _state.value.copy(
-                    position = p.copy(remainingSeconds = remaining),
-                )
-            }
-            settle()
-        }
     }
 
-    fun onCloseNow() {
-        if (_state.value.position == null) return
-        countdownJob?.cancel()
-        countdownJob = null
-        settle()
-    }
+    fun onCloseNow() = session.closeNow()
 
     fun onResultDismissed() {
         resultDismissJob?.cancel()
@@ -293,39 +303,25 @@ class HomeViewModel @Inject constructor() : ViewModel() {
         }
     }
 
-    private fun settle() {
+    /** Folds a trade settled by [TradeSessionManager] into history and balances. */
+    private fun onSettled(settled: SettledTrade) {
         val current = _state.value
-        val position = current.position ?: return
-        val exit = tickSource.currentOdd
-        val entry = position.entryOdd
-        val won = when (position.direction) {
-            Direction.UP -> exit > entry
-            Direction.DOWN -> exit < entry
-        }
-        val result = when {
-            exit == entry -> TradeResult.Tie
-            won -> TradeResult.Win(
-                profit = position.stake * (HomeUiState.MULTIPLIER - 1),
-                entry = entry,
-                exit = exit,
-            )
-            else -> TradeResult.Loss(position.stake, entry, exit)
-        }
+        val result = settled.result
         val record = TradeRecord(
-            id = System.currentTimeMillis(),
-            matchTitle = current.selectedMatch.title,
-            team = current.selectedMatch.nameOf(current.selectedSide),
-            direction = position.direction,
-            stake = position.stake,
-            entryOdd = entry,
-            exitOdd = exit,
+            id = settled.timestampMillis,
+            matchTitle = settled.matchTitle,
+            team = settled.team,
+            direction = settled.direction,
+            stake = settled.stake,
+            entryOdd = settled.entryOdd,
+            exitOdd = settled.exitOdd,
             profit = when (result) {
                 is TradeResult.Win -> result.profit
-                is TradeResult.Loss -> -position.stake.toDouble()
+                is TradeResult.Loss -> -settled.stake.toDouble()
                 TradeResult.Tie -> 0.0
             },
-            windowSeconds = position.windowSeconds,
-            timestampMillis = System.currentTimeMillis(),
+            windowSeconds = settled.windowSeconds,
+            timestampMillis = settled.timestampMillis,
         )
         val tx = when (result) {
             is TradeResult.Win -> ChainTx(
@@ -334,20 +330,23 @@ class HomeViewModel @Inject constructor() : ViewModel() {
             )
             is TradeResult.Loss -> ChainTx(
                 id = record.id + 1, kind = TxKind.TRADE_LOSS,
-                amount = position.stake.toDouble(),
+                amount = settled.stake.toDouble(),
                 timestampMillis = record.timestampMillis, signature = mockSignature(),
             )
             TradeResult.Tie -> null
         }
         _state.value = current.copy(
-            position = null,
             lastResult = result,
             history = listOf(record) + current.history,
             transactions = listOfNotNull(tx) + current.transactions,
         )
+        session.consumeSettled()
         Analytics.log(
             "position_settled",
-            mapOf("result" to if (won) "win" else "loss", "paper" to "true"),
+            mapOf(
+                "result" to if (result is TradeResult.Win) "win" else "loss",
+                "paper" to "true",
+            ),
         )
         resultDismissJob = viewModelScope.launch {
             delay(6_000)

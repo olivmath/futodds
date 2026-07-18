@@ -101,6 +101,12 @@
     <string name="address_copy">Copy address</string>
     <string name="address_copied">Address copied</string>
 
+    <!-- Trade-session notifications -->
+    <string name="notif_channel_session">Open position</string>
+    <string name="notif_channel_result">Trade results</string>
+    <string name="notif_live_text">Odd %1$s · entry %2$s · %3$ds left</string>
+    <string name="notif_close_now">Close now</string>
+
     <!-- Profile -->
     <string name="back">Back</string>
     <string name="copy_address">Copy address</string>
