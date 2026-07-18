@@ -14,13 +14,25 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
+/** Which team's odd series the terminal tracks and trades. */
+enum class TeamSide { HOME, AWAY }
+
 data class Match(
     val id: String,
     val home: String,
     val away: String,
     val baseOdd: Double,
+    val awayOdd: Double,
 ) {
     val title: String get() = "$home × $away"
+
+    fun nameOf(side: TeamSide): String = if (side == TeamSide.HOME) home else away
+
+    fun oddOf(side: TeamSide): Double = if (side == TeamSide.HOME) baseOdd else awayOdd
+
+    /** Compact team code for the side toggle, derived from the id ("ale-ita" → ALE/ITA). */
+    fun codeOf(side: TeamSide): String =
+        id.split("-")[if (side == TeamSide.HOME) 0 else 1].uppercase()
 }
 
 data class HomePosition(
@@ -41,6 +53,7 @@ data class HomeUiState(
     val stakeIndex: Int = 2,   // 10 USDC
     val windowIndex: Int = 1,  // 60 s
     val selectedMatch: Match = MATCHES.first(),
+    val selectedSide: TeamSide = TeamSide.HOME,
     val position: HomePosition? = null,
     val lastResult: TradeResult? = null,
 ) {
@@ -54,12 +67,12 @@ data class HomeUiState(
 
         // Live catalog — replaced by GET /matches when the backend lands.
         val MATCHES = listOf(
-            Match("arg-esp", "Argentina", "Espanha", 2.10),
-            Match("bra-fra", "Brasil", "França", 1.85),
-            Match("ing-por", "Inglaterra", "Portugal", 2.45),
-            Match("ale-ita", "Alemanha", "Itália", 1.95),
-            Match("mex-eua", "México", "EUA", 2.30),
-            Match("jap-cor", "Japão", "Coreia do Sul", 2.60),
+            Match("arg-esp", "Argentina", "Espanha", 2.10, 3.30),
+            Match("bra-fra", "Brasil", "França", 1.85, 3.60),
+            Match("ing-por", "Inglaterra", "Portugal", 2.45, 2.75),
+            Match("ale-ita", "Alemanha", "Itália", 1.95, 3.40),
+            Match("mex-eua", "México", "EUA", 2.30, 2.90),
+            Match("jap-cor", "Japão", "Coreia do Sul", 2.60, 2.55),
         )
     }
 }
@@ -99,16 +112,41 @@ class HomeViewModel @Inject constructor() : ViewModel() {
 
     /**
      * Switches the terminal to another live match. Blocked while a position
-     * is open — the series being traded cannot change mid-window.
+     * is open — the series being traded cannot change mid-window. The side
+     * resets to the home team so the terminal always lands in a predictable
+     * state.
      */
     fun onMatchSelected(match: Match): Boolean {
         val current = _state.value
         if (current.position != null) return false
         if (match.id == current.selectedMatch.id) return true
         tickSource = SimulatedTickSource(baseOdd = match.baseOdd)
-        _state.value = current.copy(selectedMatch = match, lastResult = null)
+        _state.value = current.copy(
+            selectedMatch = match,
+            selectedSide = TeamSide.HOME,
+            lastResult = null,
+        )
         startFeed()
         Analytics.log("match_opened", mapOf("match" to match.id))
+        return true
+    }
+
+    /**
+     * Switches which team's odd the terminal tracks. Same rule as switching
+     * matches: blocked while a position is open, because it swaps the series
+     * being traded.
+     */
+    fun onSideSelected(side: TeamSide): Boolean {
+        val current = _state.value
+        if (current.position != null) return false
+        if (side == current.selectedSide) return true
+        tickSource = SimulatedTickSource(baseOdd = current.selectedMatch.oddOf(side))
+        _state.value = current.copy(selectedSide = side, lastResult = null)
+        startFeed()
+        Analytics.log(
+            "side_selected",
+            mapOf("match" to current.selectedMatch.id, "side" to side.name),
+        )
         return true
     }
 

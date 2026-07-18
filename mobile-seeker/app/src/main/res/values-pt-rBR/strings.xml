@@ -34,6 +34,8 @@
     <string name="home_mode">Modo Rápido</string>
     <string name="home_payout">Lucro de até 93%%</string>
     <string name="home_position_open">%1$s · entrada %2$s</string>
+    <string name="open_games_cd">Abrir lista de jogos</string>
+    <string name="team_switch_blocked">Aguarde a posição encerrar para trocar de time.</string>
     <string name="home_close">Fechar</string>
     <string name="result_win">Você ganhou +%1$s USDC</string>
     <string name="result_loss">Você perdeu %1$d USDC</string>

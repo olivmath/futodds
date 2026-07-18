@@ -77,10 +77,17 @@ fun GamesScreen(
         if (liveTab) {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 items(HomeUiState.MATCHES, key = { it.id }) { match ->
+                    val selected = match.id == state.selectedMatch.id
                     MatchRow(
                         match = match,
                         odd = currentOddOf(match),
-                        selected = match.id == state.selectedMatch.id,
+                        // The live odd shown is the tracked team's series.
+                        trackedTeam = if (selected) {
+                            match.nameOf(state.selectedSide)
+                        } else {
+                            match.home
+                        },
+                        selected = selected,
                         onClick = {
                             if (onMatchSelected(match)) {
                                 onOpenTerminal()
@@ -134,6 +141,7 @@ private fun TabLabel(text: String, selected: Boolean, onClick: () -> Unit) {
 private fun MatchRow(
     match: Match,
     odd: Double,
+    trackedTeam: String,
     selected: Boolean,
     onClick: () -> Unit,
 ) {
@@ -163,7 +171,7 @@ private fun MatchRow(
                 fontWeight = FontWeight.Bold,
             )
             Text(
-                text = stringResource(R.string.games_odd_label, match.home),
+                text = stringResource(R.string.games_odd_label, trackedTeam),
                 color = OddsdexColors.TextSecondary,
                 fontSize = 13.sp,
             )

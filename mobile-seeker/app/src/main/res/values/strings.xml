@@ -40,6 +40,8 @@
     <string name="home_mode">Quick mode</string>
     <string name="home_payout">Profit up to 93%%</string>
     <string name="home_position_open">%1$s · entry %2$s</string>
+    <string name="open_games_cd">Open games list</string>
+    <string name="team_switch_blocked">Wait for your position to settle before switching teams.</string>
     <string name="home_close">Close</string>
     <string name="result_win">You won +%1$s USDC</string>
     <string name="result_loss">You lost %1$d USDC</string>
