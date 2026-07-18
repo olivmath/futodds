@@ -1,5 +1,8 @@
 package com.oddsdex.app.ui.chart
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -22,6 +25,7 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
@@ -56,6 +60,12 @@ import kotlin.math.min
  * band is mapped between them so the line, pill and labels stay visible, while
  * the gradient area fill bleeds to the bottom edge — the chart reads as
  * occupying the whole screen behind the overlays.
+ *
+ * [seriesKey] identifies WHICH series the buffer holds (match + team). When it
+ * changes, the motion state is discarded and the chart cross-fades in already
+ * at the new scale: switching assets must read as a clean cut, never as the
+ * old line morphing into the new one (the spring head + autoscale chasing a
+ * disjoint range is what made switches look broken).
  */
 @Composable
 fun OddsChart(
@@ -64,6 +74,7 @@ fun OddsChart(
     topInsetPx: Float,
     bottomInsetPx: Float,
     modifier: Modifier = Modifier,
+    seriesKey: Any = Unit,
 ) {
     val textMeasurer = rememberTextMeasurer()
     var frame by remember { mutableLongStateOf(0L) }
@@ -74,11 +85,16 @@ fun OddsChart(
     }
     val outOdds = remember { DoubleArray(SeriesBuffer.DEFAULT_CAPACITY) }
     val outTimes = remember { LongArray(SeriesBuffer.DEFAULT_CAPACITY) }
-    val motion = remember { ChartMotion() }
+    val motion = remember(seriesKey) { ChartMotion() }
+    val appear = remember(seriesKey) { Animatable(0f) }
+    LaunchedEffect(seriesKey) {
+        appear.animateTo(1f, tween(durationMillis = 240, easing = LinearOutSlowInEasing))
+    }
 
     Spacer(
         modifier = modifier
             .fillMaxSize()
+            .graphicsLayer { alpha = appear.value }
             .drawBehind {
                 val frameNanos = frame // draw-phase read: redraw every frame
                 val n = buffer.snapshotInto(outOdds, outTimes)

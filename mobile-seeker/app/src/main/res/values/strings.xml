@@ -40,6 +40,8 @@
     <string name="home_mode">Quick mode</string>
     <string name="home_payout">Profit up to 93%%</string>
     <string name="home_position_open">%1$s · entry %2$s</string>
+    <string name="open_games_cd">Open games list</string>
+    <string name="team_switch_blocked">Wait for your position to settle before switching teams.</string>
     <string name="home_close">Close</string>
     <string name="result_win">You won +%1$s USDC</string>
     <string name="result_loss">You lost %1$d USDC</string>
@@ -52,6 +54,13 @@
     <string name="tab_help">Help</string>
     <string name="tab_profile">Profile</string>
     <string name="coming_soon">Coming soon</string>
+
+    <!-- History -->
+    <string name="history_title">History</string>
+    <string name="history_empty">No trades yet — open your first position in the terminal.</string>
+    <string name="history_stat_pnl">P&amp;L (USDC)</string>
+    <string name="history_stat_winrate">Win rate</string>
+    <string name="history_stat_trades">Trades</string>
 
     <!-- Games list -->
     <string name="games_title">Games</string>
@@ -72,8 +81,31 @@
     <string name="payments_stake">Stake</string>
     <string name="payments_unstake">Unstake</string>
     <string name="payments_transactions">Transactions</string>
+    <string name="payments_trading_balance">Trading account</string>
+    <string name="payments_wallet_balance">Wallet: %1$s</string>
+    <string name="payments_stake_desc">Move USDC from your wallet into your trading account to place trades.</string>
+    <string name="payments_unstake_desc">Move funds from your trading account back to your wallet as USDC.</string>
+    <string name="payments_available">Available: %1$s</string>
+    <string name="payments_max">MAX</string>
+    <string name="payments_amount_too_high">Amount exceeds available balance.</string>
+    <string name="payments_receive_trading">You\'ll receive %1$s in your trading account</string>
+    <string name="payments_receive_wallet">You\'ll receive %1$s in your wallet</string>
+    <string name="payments_confirming">Confirming on-chain…</string>
+    <string name="payments_stake_done">Stake confirmed: %1$s moved to your trading account.</string>
+    <string name="payments_unstake_done">Unstake confirmed: %1$s back in your wallet.</string>
+    <string name="payments_tx_empty">No transactions yet.</string>
+    <string name="tx_stake">Stake</string>
+    <string name="tx_unstake">Unstake</string>
+    <string name="tx_win">Trade win</string>
+    <string name="tx_loss">Trade loss</string>
     <string name="address_copy">Copy address</string>
     <string name="address_copied">Address copied</string>
+
+    <!-- Trade-session notifications -->
+    <string name="notif_channel_session">Open position</string>
+    <string name="notif_channel_result">Trade results</string>
+    <string name="notif_live_text">Odd %1$s · entry %2$s · %3$ds left</string>
+    <string name="notif_close_now">Close now</string>
 
     <!-- Profile -->
     <string name="back">Back</string>

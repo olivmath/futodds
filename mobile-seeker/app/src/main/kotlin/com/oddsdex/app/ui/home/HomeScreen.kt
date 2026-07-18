@@ -1,5 +1,6 @@
 package com.oddsdex.app.ui.home
 
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearEasing
@@ -35,6 +36,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.automirrored.filled.ShowChart
 import androidx.compose.material.icons.filled.AccountBalanceWallet
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.SportsSoccer
@@ -52,13 +54,18 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -97,6 +104,7 @@ fun HomeScreen(
                     viewModel = viewModel,
                     onWalletClick = { showPayments = true },
                     onProfileClick = { showProfile = true },
+                    onOpenGames = { tab = HomeTab.GAMES },
                 )
                 HomeTab.GAMES -> GamesScreen(
                     state = state,
@@ -104,8 +112,8 @@ fun HomeScreen(
                     onMatchSelected = viewModel::onMatchSelected,
                     onOpenTerminal = { tab = HomeTab.TERMINAL },
                 )
+                HomeTab.HISTORY -> HistoryScreen(history = state.history)
                 HomeTab.HELP -> HelpScreen()
-                else -> ComingSoon()
             }
         }
         BottomNav(tab, onSelect = { tab = it })
@@ -113,6 +121,14 @@ fun HomeScreen(
 
     if (showPayments) {
         PaymentsSheet(
+            walletUsdc = state.walletUsdc,
+            tradingBalance = state.tradingBalance,
+            busy = state.paymentsBusy,
+            notice = state.paymentsNotice,
+            transactions = state.transactions,
+            onStake = viewModel::onStake,
+            onUnstake = viewModel::onUnstake,
+            onNoticeDismissed = viewModel::onPaymentsNoticeDismissed,
             onDismiss = { showPayments = false },
         )
     }
@@ -141,7 +157,9 @@ private fun Terminal(
     viewModel: HomeViewModel,
     onWalletClick: () -> Unit,
     onProfileClick: () -> Unit,
+    onOpenGames: () -> Unit,
 ) {
+    val context = LocalContext.current
     val density = LocalDensity.current
     var topHeightPx by remember { mutableIntStateOf(0) }
     var bottomHeightPx by remember { mutableIntStateOf(0) }
@@ -162,6 +180,7 @@ private fun Terminal(
             entryOdd = state.position?.entryOdd,
             topInsetPx = topInset,
             bottomInsetPx = bottomInset,
+            seriesKey = "${state.selectedMatch.id}:${state.selectedSide.name}",
         )
 
         Column(
@@ -169,8 +188,22 @@ private fun Terminal(
                 .align(Alignment.TopStart)
                 .onSizeChanged { topHeightPx = it.height },
         ) {
-            TopBar(onWalletClick, onProfileClick)
-            MatchRow(state.selectedMatch)
+            TopBar(state.tradingBalance, onWalletClick, onProfileClick)
+            MatchHeader(
+                match = state.selectedMatch,
+                side = state.selectedSide,
+                sideSwitchEnabled = state.position == null,
+                onChipClick = onOpenGames,
+                onSideSelected = { side ->
+                    if (!viewModel.onSideSelected(side)) {
+                        Toast.makeText(
+                            context,
+                            R.string.team_switch_blocked,
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                    }
+                },
+            )
         }
 
         Column(
@@ -201,7 +234,11 @@ private fun Terminal(
 }
 
 @Composable
-private fun TopBar(onWalletClick: () -> Unit, onProfileClick: () -> Unit) {
+private fun TopBar(
+    tradingBalance: Double,
+    onWalletClick: () -> Unit,
+    onProfileClick: () -> Unit,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -230,7 +267,7 @@ private fun TopBar(onWalletClick: () -> Unit, onProfileClick: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
-                text = "0.00 USDC",
+                text = String.format(Locale.US, "%.2f USDC", tradingBalance),
                 color = OddsdexColors.TextPrimary,
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
@@ -264,17 +301,33 @@ private fun TopBar(onWalletClick: () -> Unit, onProfileClick: () -> Unit) {
     }
 }
 
+/**
+ * Match chip + team side toggle. The chip is the asset switcher (opens the
+ * games list — standard trading-app pattern: the asset name always leads to
+ * the asset list); the toggle beside LIVE picks which team's odd the chart
+ * tracks and the trade rides.
+ */
 @Composable
-private fun MatchRow(match: Match) {
+private fun MatchHeader(
+    match: Match,
+    side: TeamSide,
+    sideSwitchEnabled: Boolean,
+    onChipClick: () -> Unit,
+    onSideSelected: (TeamSide) -> Unit,
+) {
     Row(
-        modifier = Modifier.padding(horizontal = 16.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Row(
             modifier = Modifier
+                .weight(1f, fill = false)
                 .clip(RoundedCornerShape(14.dp))
                 .background(OddsdexColors.ChipSurface)
-                .padding(horizontal = 14.dp, vertical = 10.dp),
+                .clickable(onClick = onChipClick)
+                .padding(start = 14.dp, end = 8.dp, top = 10.dp, bottom = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             LiveDot()
@@ -284,6 +337,9 @@ private fun MatchRow(match: Match) {
                 color = OddsdexColors.TextPrimary,
                 fontSize = 16.sp,
                 fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
             )
             Spacer(Modifier.width(8.dp))
             Text(
@@ -292,6 +348,65 @@ private fun MatchRow(match: Match) {
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 1.sp,
+            )
+            Icon(
+                Icons.Filled.ExpandMore,
+                contentDescription = stringResource(R.string.open_games_cd),
+                tint = OddsdexColors.TextSecondary,
+                modifier = Modifier.size(20.dp),
+            )
+        }
+        Spacer(Modifier.width(8.dp))
+        TeamToggle(
+            match = match,
+            side = side,
+            enabled = sideSwitchEnabled,
+            onSideSelected = onSideSelected,
+        )
+    }
+}
+
+/**
+ * Compact segmented toggle with the two team codes. The selected segment
+ * reuses the chart price-pill look (light on dark): "this team" is visually
+ * the same object as "this series". Deliberately not green/red — those are
+ * reserved for direction and results.
+ */
+@Composable
+private fun TeamToggle(
+    match: Match,
+    side: TeamSide,
+    enabled: Boolean,
+    onSideSelected: (TeamSide) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .alpha(if (enabled) 1f else 0.45f)
+            .clip(RoundedCornerShape(14.dp))
+            .background(OddsdexColors.ChipSurface)
+            .padding(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        TeamSide.entries.forEach { entry ->
+            val selected = entry == side
+            Text(
+                text = match.codeOf(entry),
+                color = if (selected) OddsdexColors.PillText else OddsdexColors.TextSecondary,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = JetBrainsMonoFamily,
+                letterSpacing = 1.sp,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(
+                        if (selected) OddsdexColors.PillBackground
+                        else OddsdexColors.ChipSurface,
+                    )
+                    .clickable { onSideSelected(entry) }
+                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                    .semantics {
+                        contentDescription = match.nameOf(entry)
+                    },
             )
         }
     }
@@ -448,17 +563,6 @@ private fun ResultBanner(result: TradeResult?, onDismiss: () -> Unit) {
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun ComingSoon() {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text(
-            text = stringResource(R.string.coming_soon),
-            color = OddsdexColors.TextSecondary,
-            fontSize = 16.sp,
-        )
     }
 }
 
