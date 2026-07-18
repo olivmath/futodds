@@ -4,12 +4,15 @@ import test from "node:test";
 import { createApp } from "../src/server.js";
 import { createStore } from "../src/store.js";
 
+const silentLogger = { info() {}, error() {} };
+
 test("backend API allows browser calls from the Vite app", async () => {
   const server = createServer(
     createApp({
       store: createStore([]),
       poller: { start() {}, stop() {} },
       settlementWorker: { runOnce: async () => ({ checked: 0, settled: 0 }) },
+      logger: silentLogger,
     }),
   );
 
@@ -35,6 +38,7 @@ test("backend API handles CORS preflight", async () => {
       store: createStore([]),
       poller: { start() {}, stop() {} },
       settlementWorker: { runOnce: async () => ({ checked: 0, settled: 0 }) },
+      logger: silentLogger,
     }),
   );
 
@@ -54,6 +58,31 @@ test("backend API handles CORS preflight", async () => {
     assert.equal(response.status, 204);
     assert.equal(response.headers.get("access-control-allow-origin"), "*");
     assert.match(response.headers.get("access-control-allow-methods") ?? "", /POST/);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("backend API logs requests and admin actions", async () => {
+  const logs = [];
+  const server = createServer(
+    createApp({
+      store: createStore([]),
+      poller: { start() {}, stop() {} },
+      settlementWorker: { runOnce: async () => ({ checked: 0, settled: 0 }) },
+      logger: { info: (event, details) => logs.push({ event, details }), error() {} },
+    }),
+  );
+
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.equal(typeof address, "object");
+
+  try {
+    await fetch(`http://127.0.0.1:${address.port}/poller/start`, { method: "POST" });
+
+    assert.ok(logs.some((log) => log.event === "http.request" && log.details.path === "/poller/start"));
+    assert.ok(logs.some((log) => log.event === "admin.poller.start"));
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }

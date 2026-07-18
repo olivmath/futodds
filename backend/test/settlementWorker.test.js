@@ -5,9 +5,11 @@ import { createStore } from "../src/store.js";
 
 test("settlement worker settles only open expired bets", async () => {
   const settled = [];
+  const logs = [];
   const store = createStore([{ id: "match_1", odds: { home: 6700, away: 2800, draw: 500 } }]);
   const worker = createSettlementWorker({
     store,
+    logger: { info: (event, details) => logs.push({ event, details }), error() {} },
     now: () => 1_700_000_100,
     fetchOpenBets: async () => [
       { user: "user_1", matchId: "match_1", nonce: 1, expiresAt: 1_700_000_090, status: 0 },
@@ -27,4 +29,13 @@ test("settlement worker settles only open expired bets", async () => {
   assert.equal(settled[0].bet.user, "user_1");
   assert.equal(settled[0].oddsAtExpiryHome, 6700);
   assert.equal(store.status.txs[0].signature, "settled_1");
+  assert.deepEqual(logs.map((log) => log.event), [
+    "settlement.run.start",
+    "settlement.bets.fetched",
+    "settlement.bet.settle",
+    "settlement.bet.settled",
+    "settlement.bet.skip",
+    "settlement.bet.skip",
+    "settlement.run.done",
+  ]);
 });
