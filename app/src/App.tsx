@@ -77,6 +77,15 @@ type BalanceSnapshot = {
   vaultBalance: bigint | null;
 };
 
+type BackendSnapshot = {
+  ok?: boolean;
+  poller?: { running?: boolean; lastRunAt?: string | null };
+  settlement?: { running?: boolean; lastRunAt?: string | null };
+  matches?: Array<{ id: string; odds: OddsInput; updatedAt?: string }>;
+  txs?: Array<Record<string, unknown>>;
+  errors?: Array<{ at?: string; message: string }>;
+};
+
 const initialChecks: Check[] = [
   { label: "Create match", state: "idle", detail: "Run update_odds on a new match ID." },
   { label: "Update odds", state: "idle", detail: "Run update_odds again on the same PDA." },
@@ -100,6 +109,11 @@ function App() {
   const [settleOdds, setSettleOdds] = useState(6700);
   const [bets, setBets] = useState<ListedBet[]>([]);
   const [matches, setMatches] = useState<ListedMatch[]>([]);
+  const [backendUrl, setBackendUrl] = useState("http://localhost:8787");
+  const [backendFramePath, setBackendFramePath] = useState("/status");
+  const [backendStatus, setBackendStatus] = useState<BackendSnapshot | null>(null);
+  const [backendReachable, setBackendReachable] = useState<boolean | null>(null);
+  const [debugOpen, setDebugOpen] = useState(false);
   const [balances, setBalances] = useState<BalanceSnapshot>({
     walletAta: null,
     walletBalance: null,
@@ -666,6 +680,75 @@ function App() {
     }
   }, [connection, parsedMint, pushLog, refreshBalances, sendTransaction, walletPublicKey]);
 
+  const callBackend = useCallback(
+    async (path: string, init?: RequestInit) => {
+      const response = await fetch(`${backendUrl}${path}`, init);
+      if (!response.ok) {
+        throw new Error(`${path} returned ${response.status}`);
+      }
+      return response.json() as Promise<BackendSnapshot>;
+    },
+    [backendUrl],
+  );
+
+  const checkBackendHealth = useCallback(async () => {
+    setIsBusy(true);
+    try {
+      const health = await callBackend("/health");
+      setBackendReachable(Boolean(health.ok));
+      pushLog({ title: "Backend health", body: `${backendUrl}/health OK`, kind: "success" });
+    } catch (error) {
+      setBackendReachable(false);
+      pushLog({
+        title: "backend health failed",
+        body: error instanceof Error ? error.message : String(error),
+        kind: "error",
+      });
+    } finally {
+      setIsBusy(false);
+    }
+  }, [backendUrl, callBackend, pushLog]);
+
+  const fetchBackendStatus = useCallback(async () => {
+    setIsBusy(true);
+    try {
+      const status = await callBackend("/status");
+      setBackendStatus(status);
+      setBackendReachable(true);
+      pushLog({ title: "Backend status fetched", body: `${status.txs?.length ?? 0} tx(s) tracked`, kind: "success" });
+    } catch (error) {
+      setBackendReachable(false);
+      pushLog({
+        title: "backend status failed",
+        body: error instanceof Error ? error.message : String(error),
+        kind: "error",
+      });
+    } finally {
+      setIsBusy(false);
+    }
+  }, [callBackend, pushLog]);
+
+  const postBackendAction = useCallback(
+    async (path: string, title: string) => {
+      setIsBusy(true);
+      try {
+        const result = await callBackend(path, { method: "POST" });
+        pushLog({ title, body: JSON.stringify(result), kind: "success" });
+        await fetchBackendStatus();
+      } catch (error) {
+        setBackendReachable(false);
+        pushLog({
+          title: `${title} failed`,
+          body: error instanceof Error ? error.message : String(error),
+          kind: "error",
+        });
+      } finally {
+        setIsBusy(false);
+      }
+    },
+    [callBackend, fetchBackendStatus, pushLog],
+  );
+
   const updateOddsField = (field: keyof OddsInput, value: string) => {
     const parsed = Number(value);
     setOdds((current) => ({
@@ -674,19 +757,48 @@ function App() {
     }));
   };
 
+  const flowSteps = [
+    {
+      label: "Connect wallet",
+      state: hasWallet ? "pass" : "idle",
+      detail: walletPublicKey ? shorten(walletPublicKey.toBase58()) : "Phantom or Solflare on testnet",
+    },
+    {
+      label: "Load match",
+      state: account ? "pass" : "idle",
+      detail: account ? `${account.oddsHome}/${account.oddsAway}/${account.oddsDraw}` : "Fetch or create a match PDA",
+    },
+    {
+      label: "Update odds",
+      state: checks.some((check) => check.label === "Update odds" && check.state === "pass") ? "pass" : "idle",
+      detail: oddsAreValid(odds) ? "ready" : `sum ${sum}`,
+    },
+    {
+      label: "Place bet",
+      state: bets.length > 0 ? "pass" : "idle",
+      detail: bets.length > 0 ? `${bets.length} bet(s)` : "fund wallet and place a bet",
+    },
+    {
+      label: "Settle",
+      state: bets.some((bet) => bet.account.status !== 0) ? "pass" : "idle",
+      detail: "manual or backend worker",
+    },
+  ] satisfies Array<{ label: string; state: CheckState; detail: string }>;
+
   return (
     <main className="app-shell">
-      <section className="topbar">
+      <section className="backoffice-header">
         <div>
-          <p className="kicker">FutOdds / Testnet Console</p>
-          <h1>Betting testnet console</h1>
+          <p className="kicker">FutOdds Backoffice</p>
+          <h1>Test console</h1>
+          <p className="subtitle">Validate oracle updates, bet placement, settlement, and canonical Solana realtime.</p>
         </div>
         <div className="wallet-actions">
           <button type="button" onClick={() => void connectWallet("phantom")}>
-            Connect Phantom
+            Phantom
           </button>
           <button type="button" onClick={() => void connectWallet("solflare")}>
-            Connect Solflare
+            Solflare
           </button>
         </div>
       </section>
@@ -695,19 +807,33 @@ function App() {
         <StatusItem label="Cluster" value="testnet" />
         <StatusItem label="Oracle" value={shorten(PROGRAM_ID.toBase58())} />
         <StatusItem label="Betting" value={shorten(BETTING_ENGINE_PROGRAM_ID.toBase58())} />
+        <StatusItem label="Backend" value={backendReachable === null ? "not checked" : backendReachable ? "online" : "offline"} />
         <StatusItem label="Wallet" value={walletPublicKey ? shorten(walletPublicKey.toBase58()) : "not connected"} />
         <StatusItem label="Wallet USDC" value={formatBalance(balances.walletBalance)} />
         <StatusItem label="Vault USDC" value={formatBalance(balances.vaultBalance)} />
         <StatusItem label="Odds sum" value={`${sum} ${oddsAreValid(odds) ? "OK" : "INVALID"}`} />
       </section>
 
-      <section className="workspace">
-        <div className="panel controls-panel">
+      <section className="flow-panel">
+        {flowSteps.map((step, index) => (
+          <div className={`flow-step ${step.state}`} key={step.label}>
+            <span>{index + 1}</span>
+            <strong>{step.label}</strong>
+            <p>{step.detail}</p>
+          </div>
+        ))}
+      </section>
+
+      <section className="backoffice-grid">
+        <div className="panel primary-panel">
           <div className="panel-header">
-            <h2>Inputs</h2>
+            <div>
+              <p className="section-label">Step 2-3</p>
+              <h2>Match + Oracle</h2>
+            </div>
             <div className="panel-header-actions">
               <button className="ghost-button" type="button" onClick={() => void fetchMatch()}>
-                Fetch PDA
+                Fetch match
               </button>
               <button className="ghost-button" type="button" disabled={isBusy} onClick={() => void listMatches()}>
                 List matches
@@ -719,6 +845,12 @@ function App() {
             <span>Match ID</span>
             <input value={matchId} onChange={(event) => setMatchId(event.target.value)} />
           </label>
+
+          <div className="odds-board">
+            <Metric label="Home" value={String(odds.home)} />
+            <Metric label="Away" value={String(odds.away)} />
+            <Metric label="Draw" value={String(odds.draw)} />
+          </div>
 
           <div className="odds-grid">
             <label className="field">
@@ -737,42 +869,81 @@ function App() {
 
           <div className="button-row">
             <button disabled={!hasWallet || isBusy || !oddsAreValid(odds)} onClick={() => void runCreateOrUpdate()}>
-              Create / update
+              Create or update odds
             </button>
             <button disabled={!hasWallet || isBusy} onClick={() => void runInvalidOdds()}>
-              Test invalid odds
+              Invalid odds test
             </button>
             <button disabled={!hasWallet || isBusy} onClick={() => void runUnauthorized()}>
-              Test unauthorized
+              Unauthorized test
             </button>
+          </div>
+
+          <div className="data-line">
+            <span>Match PDA</span>
+            <code>{matchPda.toBase58()}</code>
           </div>
         </div>
 
-        <div className="panel">
+        <div className="panel backend-panel">
           <div className="panel-header">
-            <h2>Phase 0 checks</h2>
-            <span className="small-label">4 criteria</span>
+            <div>
+              <p className="section-label">Backend</p>
+              <h2>Poller + Worker</h2>
+            </div>
+            <span className={`health-pill ${backendReachable ? "online" : backendReachable === false ? "offline" : ""}`}>
+              {backendReachable === null ? "not checked" : backendReachable ? "online" : "offline"}
+            </span>
           </div>
-          <div className="checks">
-            {checks.map((check) => (
-              <div className={`check ${check.state}`} key={check.label}>
-                <span>{stateLabel(check.state)}</span>
-                <strong>{check.label}</strong>
-                <p>{check.detail}</p>
-              </div>
-            ))}
+
+          <label className="field">
+            <span>Backend URL</span>
+            <input value={backendUrl} onChange={(event) => setBackendUrl(event.target.value)} />
+          </label>
+
+          <div className="button-grid">
+            <button className="ghost-button" type="button" disabled={isBusy} onClick={() => void checkBackendHealth()}>
+              Health
+            </button>
+            <button className="ghost-button" type="button" disabled={isBusy} onClick={() => void fetchBackendStatus()}>
+              Status
+            </button>
+            <button type="button" disabled={isBusy} onClick={() => void postBackendAction("/poller/start", "Poller started")}>
+              Start poller
+            </button>
+            <button className="ghost-button" type="button" disabled={isBusy} onClick={() => void postBackendAction("/poller/stop", "Poller stopped")}>
+              Stop poller
+            </button>
+            <button className="wide-button" type="button" disabled={isBusy} onClick={() => void postBackendAction("/settlement/run-once", "Settlement run")}>
+              Run settlement once
+            </button>
+          </div>
+
+          <div className="backend-summary">
+            <Metric label="Poller" value={backendStatus?.poller?.running ? "running" : "stopped"} />
+            <Metric label="Tracked txs" value={String(backendStatus?.txs?.length ?? 0)} />
+            <Metric label="Errors" value={String(backendStatus?.errors?.length ?? 0)} />
           </div>
         </div>
       </section>
 
-      <section className="workspace lower">
+      <section className="backoffice-grid">
         <div className="panel">
           <div className="panel-header">
-            <h2>Token readiness</h2>
+            <div>
+              <p className="section-label">Step 1</p>
+              <h2>Wallet + Tokens</h2>
+            </div>
             <button className="ghost-button" type="button" disabled={!hasWallet || isBusy || !parsedMint} onClick={() => void refreshBalances()}>
               Refresh balances
             </button>
           </div>
+
+          <label className="field">
+            <span>Test USDC mint</span>
+            <input value={testMint} onChange={(event) => setTestMint(event.target.value)} placeholder="Mint address on testnet" />
+          </label>
+
           <div className="resource-grid">
             <ResourceItem label="Wallet ATA" address={balances.walletAta?.toBase58() ?? "not checked"} value={formatBalance(balances.walletBalance)} />
             <ResourceItem label="Escrow vault ATA" address={balances.vaultAta?.toBase58() ?? "not checked"} value={formatBalance(balances.vaultBalance)} />
@@ -792,70 +963,14 @@ function App() {
 
         <div className="panel">
           <div className="panel-header">
-            <h2>Listed matches</h2>
-            <span className="small-label">{matches.length} found</span>
-          </div>
-          <div className="match-list">
-            {matches.length === 0 ? (
-              <pre>{JSON.stringify({ status: "not listed" }, null, 2)}</pre>
-            ) : (
-              matches.map((listed) => (
-                <article className="match-entry" key={listed.pda.toBase58()}>
-                  <button className="ghost-button" type="button" onClick={() => selectMatch(listed)}>
-                    Select
-                  </button>
-                  <div>
-                    <strong>{listed.account.matchId}</strong>
-                    <span>
-                      {listed.account.oddsHome}/{listed.account.oddsAway}/{listed.account.oddsDraw}
-                    </span>
-                    <code>{shorten(listed.pda.toBase58())}</code>
-                  </div>
-                </article>
-              ))
-            )}
-          </div>
-        </div>
-      </section>
-
-      <section className="workspace lower">
-        <div className="panel account-panel">
-          <div className="panel-header">
-            <h2>Match PDA</h2>
-            <span className="mono">{shorten(matchPda.toBase58())}</span>
-          </div>
-          <pre>{formatAccount(account, matchPda.toBase58())}</pre>
-        </div>
-
-        <div className="panel log-panel">
-          <div className="panel-header">
-            <h2>Run log</h2>
-            <span className="small-label">latest first</span>
-          </div>
-          <div className="log-list">
-            {log.map((entry, index) => (
-              <article className={`log-entry ${entry.kind}`} key={`${entry.title}-${index}`}>
-                <strong>{entry.title}</strong>
-                <p>{entry.body}</p>
-              </article>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="workspace lower">
-        <div className="panel controls-panel">
-          <div className="panel-header">
-            <h2>Phase 1 bets</h2>
+            <div>
+              <p className="section-label">Step 4-5</p>
+              <h2>Bet Testing</h2>
+            </div>
             <button className="ghost-button" type="button" disabled={!hasWallet || isBusy} onClick={() => void fetchBets()}>
               Fetch bets
             </button>
           </div>
-
-          <label className="field">
-            <span>Test USDC mint</span>
-            <input value={testMint} onChange={(event) => setTestMint(event.target.value)} placeholder="Mint address on testnet" />
-          </label>
 
           <div className="odds-grid">
             <label className="field">
@@ -904,27 +1019,146 @@ function App() {
             </button>
           </div>
         </div>
+      </section>
 
-        <div className="panel account-panel">
+      <section className="backoffice-grid">
+        <div className="panel realtime-panel">
           <div className="panel-header">
-            <h2>Bet accounts</h2>
-            <span className="small-label">{bets.length} found</span>
+            <div>
+              <p className="section-label">Realtime</p>
+              <h2>Event Feed</h2>
+            </div>
+            <span className="small-label">latest first</span>
           </div>
-          <div className="bet-list">
-            {bets.length === 0 ? (
-              <pre>{JSON.stringify({ status: "not fetched" }, null, 2)}</pre>
-            ) : (
-              bets.map((bet) => (
-                <article className="bet-entry" key={bet.pda.toBase58()}>
-                  <pre>{formatBet(bet)}</pre>
-                  <button disabled={!hasWallet || isBusy || bet.account.status !== 0 || !parsedMint} onClick={() => void settleBet(bet)}>
-                    Settle
-                  </button>
-                </article>
-              ))
-            )}
+          <div className="log-list">
+            {log.map((entry, index) => (
+              <article className={`log-entry ${entry.kind}`} key={`${entry.title}-${index}`}>
+                <strong>{entry.title}</strong>
+                <p>{entry.body}</p>
+              </article>
+            ))}
           </div>
         </div>
+
+        <div className="panel checks-panel">
+          <div className="panel-header">
+            <div>
+              <p className="section-label">Assertions</p>
+              <h2>Program Checks</h2>
+            </div>
+            <span className="small-label">oracle constraints</span>
+          </div>
+          <div className="checks">
+            {checks.map((check) => (
+              <div className={`check ${check.state}`} key={check.label}>
+                <span>{stateLabel(check.state)}</span>
+                <strong>{check.label}</strong>
+                <p>{check.detail}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="panel backend-frame-panel">
+        <div className="panel-header">
+          <div>
+            <p className="section-label">Backend view</p>
+            <h2>Embedded API responses</h2>
+          </div>
+          <div className="panel-header-actions">
+            <button className="ghost-button" type="button" onClick={() => setBackendFramePath("/health")}>
+              Health
+            </button>
+            <button className="ghost-button" type="button" onClick={() => setBackendFramePath("/status")}>
+              Status
+            </button>
+            <button className="ghost-button" type="button" onClick={() => setBackendFramePath("/matches")}>
+              Matches
+            </button>
+          </div>
+        </div>
+        <div className="iframe-toolbar">
+          <code>{`${backendUrl}${backendFramePath}`}</code>
+          <a href={`${backendUrl}${backendFramePath}`} target="_blank" rel="noreferrer">
+            Open
+          </a>
+        </div>
+        <iframe className="backend-frame" title="Backend API response" src={`${backendUrl}${backendFramePath}`} />
+      </section>
+
+      <section className="debug-section">
+        <button className="debug-toggle" type="button" onClick={() => setDebugOpen((current) => !current)}>
+          {debugOpen ? "Hide debug data" : "Show debug data"}
+        </button>
+
+        {debugOpen ? (
+          <div className="debug-grid">
+            <div className="panel account-panel">
+              <div className="panel-header">
+                <h2>Match PDA</h2>
+                <span className="mono">{shorten(matchPda.toBase58())}</span>
+              </div>
+              <pre>{formatAccount(account, matchPda.toBase58())}</pre>
+            </div>
+
+            <div className="panel">
+              <div className="panel-header">
+                <h2>Listed matches</h2>
+                <span className="small-label">{matches.length} found</span>
+              </div>
+              <div className="match-list">
+                {matches.length === 0 ? (
+                  <pre>{JSON.stringify({ status: "not listed" }, null, 2)}</pre>
+                ) : (
+                  matches.map((listed) => (
+                    <article className="match-entry" key={listed.pda.toBase58()}>
+                      <button className="ghost-button" type="button" onClick={() => selectMatch(listed)}>
+                        Select
+                      </button>
+                      <div>
+                        <strong>{listed.account.matchId}</strong>
+                        <span>
+                          {listed.account.oddsHome}/{listed.account.oddsAway}/{listed.account.oddsDraw}
+                        </span>
+                        <code>{shorten(listed.pda.toBase58())}</code>
+                      </div>
+                    </article>
+                  ))
+                )}
+              </div>
+            </div>
+
+            <div className="panel account-panel">
+              <div className="panel-header">
+                <h2>Bet accounts</h2>
+                <span className="small-label">{bets.length} found</span>
+              </div>
+              <div className="bet-list">
+                {bets.length === 0 ? (
+                  <pre>{JSON.stringify({ status: "not fetched" }, null, 2)}</pre>
+                ) : (
+                  bets.map((bet) => (
+                    <article className="bet-entry" key={bet.pda.toBase58()}>
+                      <pre>{formatBet(bet)}</pre>
+                      <button disabled={!hasWallet || isBusy || bet.account.status !== 0 || !parsedMint} onClick={() => void settleBet(bet)}>
+                        Settle
+                      </button>
+                    </article>
+                  ))
+                )}
+              </div>
+            </div>
+
+            <div className="panel account-panel">
+              <div className="panel-header">
+                <h2>Backend raw</h2>
+                <span className="small-label">status JSON</span>
+              </div>
+              <pre>{JSON.stringify(backendStatus ?? { status: "not fetched" }, null, 2)}</pre>
+            </div>
+          </div>
+        ) : null}
       </section>
     </main>
   );
@@ -945,6 +1179,15 @@ function ResourceItem({ label, address, value }: { label: string; address: strin
       <span>{label}</span>
       <strong>{value}</strong>
       <code>{address}</code>
+    </div>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="metric-card">
+      <span>{label}</span>
+      <strong>{value}</strong>
     </div>
   );
 }

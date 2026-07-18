@@ -8,7 +8,7 @@ export function nextGeneratedOdds(current) {
   return { home, away, draw };
 }
 
-export function createOddsPoller({ store, sendUpdateOdds, intervalMs = 30_000 }) {
+export function createOddsPoller({ store, sendUpdateOdds, intervalMs = 60_000 }) {
   let timer = null;
 
   async function runOnce() {
