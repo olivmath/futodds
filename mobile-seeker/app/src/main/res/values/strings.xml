@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">oddsdex</string>
+
+    <!-- Demo match (onboarding) -->
+    <string name="demo_match">Argentina × Espanha</string>
+    <string name="demo_stake_label">%1$d USDC</string>
+    <string name="demo_window_label">%1$d s</string>
+
+    <string name="direction_up">UP</string>
+    <string name="direction_down">DOWN</string>
+
+    <!-- Onboarding coach sheets -->
+    <string name="onboarding_intro_title">Here\'s a quick guide on how to trade</string>
+    <string name="onboarding_intro_body">Let\'s open a test trade and see what happens.</string>
+    <string name="onboarding_intro_cta">Let\'s go</string>
+
+    <string name="onboarding_explain_title">Watch the odd move</string>
+    <string name="onboarding_explain_body">Press UP when you think the odd will rise, or DOWN when you think it will fall.</string>
+
+    <string name="onboarding_running_title">Position open: %1$s</string>
+    <string name="onboarding_running_body">Entry odd %1$s — watch the chart!</string>
+    <string name="onboarding_running_close">Close now</string>
+
+    <string name="onboarding_result_title">Congratulations! You were right</string>
+    <string name="onboarding_result_body">You made a %1$d USDC demo trade and profited %2$d USDC. Odd went from %3$s to %4$s.</string>
+    <string name="onboarding_result_cta">Continue</string>
+
+    <string name="ready_title">Are you ready to trade?</string>
+    <string name="ready_body">Connect your Seeker wallet to trade with real USDC. Signing happens in the Seed Vault — your keys never leave the device.</string>
+    <string name="ready_cta">Connect Wallet</string>
+
+    <!-- Wallet connect -->
+    <string name="wallet_error_no_wallet">No compatible wallet found on this device.</string>
+    <string name="wallet_error_failed">Wallet connection failed. Try again.</string>
+
+    <!-- Home / terminal -->
+    <string name="home_balance_caption">USDC account</string>
+    <string name="home_live">LIVE</string>
+    <string name="home_mode">Quick mode</string>
+    <string name="home_payout">Profit up to 93%%</string>
+    <string name="home_position_open">%1$s · entry %2$s</string>
+    <string name="home_close">Close</string>
+    <string name="result_win">You won +%1$s USDC</string>
+    <string name="result_loss">You lost %1$d USDC</string>
+    <string name="result_tie">Tie — stake returned</string>
+    <string name="result_odds">%1$s → %2$s</string>
+
+    <string name="tab_terminal">Terminal</string>
+    <string name="tab_games">Games</string>
+    <string name="tab_history">History</string>
+    <string name="tab_help">Help</string>
+    <string name="tab_profile">Profile</string>
+    <string name="coming_soon">Coming soon</string>
+
+    <!-- Games list -->
+    <string name="games_title">Games</string>
+    <string name="games_tab_live">Live</string>
+    <string name="games_tab_upcoming">Upcoming</string>
+    <string name="games_empty_upcoming">No scheduled matches yet.</string>
+    <string name="games_switch_blocked">Wait for your position to settle before switching games.</string>
+    <string name="games_odd_label">Odd: %1$s</string>
+
+    <!-- Help / support -->
+    <string name="help_title">Support</string>
+    <string name="help_body">Want to talk to us? Here\'s how to get in touch.</string>
+    <string name="help_chat">Chat</string>
+    <string name="help_chat_sub">Our chatbot and support team are here to help</string>
+
+    <!-- Payments sheet -->
+    <string name="payments_title">Payments</string>
+    <string name="payments_stake">Stake</string>
+    <string name="payments_unstake">Unstake</string>
+    <string name="payments_transactions">Transactions</string>
+    <string name="address_copy">Copy address</string>
+    <string name="address_copied">Address copied</string>
+
+    <!-- Profile -->
+    <string name="back">Back</string>
+    <string name="copy_address">Copy address</string>
+    <string name="profile_default_name">Trader</string>
+    <string name="profile_seeker_badge">Solana Seeker</string>
+    <string name="profile_network">Network</string>
+    <string name="profile_settings">Settings</string>
+    <string name="profile_disconnect">Disconnect wallet</string>
+</resources>
