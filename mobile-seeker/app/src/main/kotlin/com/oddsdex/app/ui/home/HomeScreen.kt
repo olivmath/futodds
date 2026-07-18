@@ -172,6 +172,7 @@ private fun Terminal(
             entryOdd = state.position?.entryOdd,
             topInsetPx = topInset,
             bottomInsetPx = bottomInset,
+            seriesKey = "${state.selectedMatch.id}:${state.selectedSide.name}",
         )
 
         Column(
