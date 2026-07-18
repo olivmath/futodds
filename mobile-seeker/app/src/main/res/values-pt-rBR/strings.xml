@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="demo_match">Argentina × Espanha</string>
+    <string name="demo_stake_label">%1$d USDC</string>
+    <string name="demo_window_label">%1$d s</string>
+
+    <string name="direction_up">SOBE</string>
+    <string name="direction_down">DESCE</string>
+
+    <string name="onboarding_intro_title">Aqui está um guia rápido de como negociar</string>
+    <string name="onboarding_intro_body">Vamos abrir uma negociação teste e ver o que dá.</string>
+    <string name="onboarding_intro_cta">Vamos lá</string>
+
+    <string name="onboarding_explain_title">Analise a movimentação da odd</string>
+    <string name="onboarding_explain_body">Pressione SOBE quando achar que a odd vai subir, ou DESCE quando achar que ela vai cair.</string>
+
+    <string name="onboarding_running_title">Posição aberta: %1$s</string>
+    <string name="onboarding_running_body">Odd de entrada %1$s — acompanhe o gráfico!</string>
+    <string name="onboarding_running_close">Fechar agora</string>
+
+    <string name="onboarding_result_title">Parabéns! Você estava certo</string>
+    <string name="onboarding_result_body">Você fez uma negociação demo de %1$d USDC e lucrou %2$d USDC. A odd foi de %3$s para %4$s.</string>
+    <string name="onboarding_result_cta">Avançar</string>
+
+    <string name="ready_title">Você está pronto para negociar?</string>
+    <string name="ready_body">Conecte sua wallet do Seeker para negociar com USDC de verdade. A assinatura acontece no Seed Vault — suas chaves nunca saem do aparelho.</string>
+    <string name="ready_cta">Conectar Wallet</string>
+
+    <string name="wallet_error_no_wallet">Nenhuma wallet compatível encontrada neste aparelho.</string>
+    <string name="wallet_error_failed">Falha ao conectar a wallet. Tente novamente.</string>
+
+    <string name="home_balance_caption">Conta USDC</string>
+    <string name="home_live">AO VIVO</string>
+    <string name="home_mode">Modo Rápido</string>
+    <string name="home_payout">Lucro de até 93%%</string>
+    <string name="home_position_open">%1$s · entrada %2$s</string>
+    <string name="home_close">Fechar</string>
+    <string name="result_win">Você ganhou +%1$s USDC</string>
+    <string name="result_loss">Você perdeu %1$d USDC</string>
+    <string name="result_tie">Empate — stake devolvido</string>
+    <string name="result_odds">%1$s → %2$s</string>
+
+    <string name="tab_terminal">Terminal</string>
+    <string name="tab_games">Jogos</string>
+    <string name="tab_history">Histórico</string>
+    <string name="tab_help">Ajuda</string>
+    <string name="tab_profile">Perfil</string>
+    <string name="coming_soon">Em breve</string>
+
+    <string name="games_title">Jogos</string>
+    <string name="games_tab_live">Ao vivo</string>
+    <string name="games_tab_upcoming">Em breve</string>
+    <string name="games_empty_upcoming">Nenhum jogo agendado ainda.</string>
+    <string name="games_switch_blocked">Aguarde a posição encerrar para trocar de jogo.</string>
+    <string name="games_odd_label">Odd: %1$s</string>
+
+    <string name="help_title">Suporte</string>
+    <string name="help_body">Quer falar conosco? Veja aqui como entrar em contato.</string>
+    <string name="help_chat">Chat</string>
+    <string name="help_chat_sub">Nosso chatbot e time de suporte estão aqui para ajudar</string>
+
+    <string name="payments_title">Pagamentos</string>
+    <string name="payments_stake">Stake</string>
+    <string name="payments_unstake">Unstake</string>
+    <string name="payments_transactions">Transações</string>
+    <string name="address_copy">Copiar endereço</string>
+    <string name="address_copied">Endereço copiado</string>
+
+    <string name="back">Voltar</string>
+    <string name="copy_address">Copiar endereço</string>
+    <string name="profile_default_name">Trader</string>
+    <string name="profile_seeker_badge">Solana Seeker</string>
+    <string name="profile_network">Rede</string>
+    <string name="profile_settings">Configurações</string>
+    <string name="profile_disconnect">Desconectar wallet</string>
+</resources>
