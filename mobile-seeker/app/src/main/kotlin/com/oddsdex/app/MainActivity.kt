@@ -72,6 +72,13 @@ class MainActivity : ComponentActivity() {
                             scope.launch {
                                 runCatching { walletSession.disconnect(sender) }
                                 Analytics.log("wallet_disconnected")
+                                // Disconnect resets the journey: the next
+                                // entry starts from the onboarding demo, not
+                                // straight at the connect screen.
+                                prefs.edit()
+                                    .putBoolean(KEY_ONBOARDING_DONE, false)
+                                    .apply()
+                                onboardingDone = false
                                 connectedAddress = null
                             }
                         },
