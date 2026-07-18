@@ -49,6 +49,39 @@ sealed interface TradeResult {
     data object Tie : TradeResult
 }
 
+/**
+ * One settled trade, newest first in [HomeUiState.history]. [profit] carries
+ * the sign: +payout on a win, -stake on a loss, 0.0 on a tie.
+ */
+data class TradeRecord(
+    val id: Long,
+    val matchTitle: String,
+    val team: String,
+    val direction: Direction,
+    val stake: Int,
+    val entryOdd: Double,
+    val exitOdd: Double,
+    val profit: Double,
+    val windowSeconds: Int,
+    val timestampMillis: Long,
+)
+
+/** Payments flow that just confirmed — the sheet renders the success banner. */
+enum class PaymentsKind { STAKE, UNSTAKE }
+
+data class PaymentsNotice(val kind: PaymentsKind, val amount: Double)
+
+enum class TxKind { STAKE, UNSTAKE, TRADE_WIN, TRADE_LOSS }
+
+/** One on-chain transaction for the payments history (mock until indexer). */
+data class ChainTx(
+    val id: Long,
+    val kind: TxKind,
+    val amount: Double,
+    val timestampMillis: Long,
+    val signature: String,
+)
+
 data class HomeUiState(
     val stakeIndex: Int = 2,   // 10 USDC
     val windowIndex: Int = 1,  // 60 s
@@ -56,6 +89,15 @@ data class HomeUiState(
     val selectedSide: TeamSide = TeamSide.HOME,
     val position: HomePosition? = null,
     val lastResult: TradeResult? = null,
+    val history: List<TradeRecord> = emptyList(),
+    // MOCK balances — replaced by the token-account RPC reads when the
+    // program lands. tradingBalance is the staked 1:1 betting token; the
+    // top bar shows it because it's what trades draw from.
+    val walletUsdc: Double = 250.0,
+    val tradingBalance: Double = 0.0,
+    val paymentsBusy: Boolean = false,
+    val paymentsNotice: PaymentsNotice? = null,
+    val transactions: List<ChainTx> = emptyList(),
 ) {
     val stake: Int get() = STAKES[stakeIndex]
     val windowSeconds: Int get() = WINDOWS[windowIndex]
@@ -92,7 +134,9 @@ class HomeViewModel @Inject constructor() : ViewModel() {
     private var countdownJob: Job? = null
     private var resultDismissJob: Job? = null
 
-    private val _state = MutableStateFlow(HomeUiState())
+    private val _state = MutableStateFlow(
+        HomeUiState(history = mockHistory(), transactions = mockTransactions()),
+    )
     val state: StateFlow<HomeUiState> = _state
 
     init {
@@ -208,8 +252,50 @@ class HomeViewModel @Inject constructor() : ViewModel() {
         _state.value = _state.value.copy(lastResult = null)
     }
 
+    /** MOCK: wallet USDC → trading balance. Replaced by the stake ix later. */
+    fun onStake(amount: Double) = runPayment(PaymentsKind.STAKE, amount)
+
+    /** MOCK: trading balance → wallet USDC. Replaced by the unstake ix later. */
+    fun onUnstake(amount: Double) = runPayment(PaymentsKind.UNSTAKE, amount)
+
+    fun onPaymentsNoticeDismissed() {
+        _state.value = _state.value.copy(paymentsNotice = null)
+    }
+
+    private fun runPayment(kind: PaymentsKind, amount: Double) {
+        val current = _state.value
+        val available = when (kind) {
+            PaymentsKind.STAKE -> current.walletUsdc
+            PaymentsKind.UNSTAKE -> current.tradingBalance
+        }
+        if (current.paymentsBusy || amount <= 0 || amount > available) return
+        _state.value = current.copy(paymentsBusy = true, paymentsNotice = null)
+        Analytics.log("${kind.name.lowercase()}_initiated", mapOf("paper" to "true"))
+        viewModelScope.launch {
+            delay(1_800) // MOCK on-chain confirmation latency
+            val s = _state.value
+            val signed = if (kind == PaymentsKind.STAKE) amount else -amount
+            val tx = ChainTx(
+                id = System.currentTimeMillis(),
+                kind = if (kind == PaymentsKind.STAKE) TxKind.STAKE else TxKind.UNSTAKE,
+                amount = amount,
+                timestampMillis = System.currentTimeMillis(),
+                signature = mockSignature(),
+            )
+            _state.value = s.copy(
+                walletUsdc = s.walletUsdc - signed,
+                tradingBalance = s.tradingBalance + signed,
+                paymentsBusy = false,
+                paymentsNotice = PaymentsNotice(kind, amount),
+                transactions = listOf(tx) + s.transactions,
+            )
+            Analytics.log("${kind.name.lowercase()}_confirmed", mapOf("paper" to "true"))
+        }
+    }
+
     private fun settle() {
-        val position = _state.value.position ?: return
+        val current = _state.value
+        val position = current.position ?: return
         val exit = tickSource.currentOdd
         val entry = position.entryOdd
         val won = when (position.direction) {
@@ -225,7 +311,40 @@ class HomeViewModel @Inject constructor() : ViewModel() {
             )
             else -> TradeResult.Loss(position.stake, entry, exit)
         }
-        _state.value = _state.value.copy(position = null, lastResult = result)
+        val record = TradeRecord(
+            id = System.currentTimeMillis(),
+            matchTitle = current.selectedMatch.title,
+            team = current.selectedMatch.nameOf(current.selectedSide),
+            direction = position.direction,
+            stake = position.stake,
+            entryOdd = entry,
+            exitOdd = exit,
+            profit = when (result) {
+                is TradeResult.Win -> result.profit
+                is TradeResult.Loss -> -position.stake.toDouble()
+                TradeResult.Tie -> 0.0
+            },
+            windowSeconds = position.windowSeconds,
+            timestampMillis = System.currentTimeMillis(),
+        )
+        val tx = when (result) {
+            is TradeResult.Win -> ChainTx(
+                id = record.id + 1, kind = TxKind.TRADE_WIN, amount = result.profit,
+                timestampMillis = record.timestampMillis, signature = mockSignature(),
+            )
+            is TradeResult.Loss -> ChainTx(
+                id = record.id + 1, kind = TxKind.TRADE_LOSS,
+                amount = position.stake.toDouble(),
+                timestampMillis = record.timestampMillis, signature = mockSignature(),
+            )
+            TradeResult.Tie -> null
+        }
+        _state.value = current.copy(
+            position = null,
+            lastResult = result,
+            history = listOf(record) + current.history,
+            transactions = listOfNotNull(tx) + current.transactions,
+        )
         Analytics.log(
             "position_settled",
             mapOf("result" to if (won) "win" else "loss", "paper" to "true"),
@@ -235,4 +354,77 @@ class HomeViewModel @Inject constructor() : ViewModel() {
             _state.value = _state.value.copy(lastResult = null)
         }
     }
+}
+
+/**
+ * MOCK: seed history so the tab reads as a lived-in account. Replaced by the
+ * positions indexer (GET /positions) when the backend lands — session trades
+ * from [HomeViewModel.settle] already prepend to this list.
+ */
+private fun mockHistory(): List<TradeRecord> {
+    val now = System.currentTimeMillis()
+    val minute = 60_000L
+    val hour = 60 * minute
+    val day = 24 * hour
+    fun win(stake: Int) = stake * (HomeUiState.MULTIPLIER - 1)
+    return listOf(
+        TradeRecord(
+            id = 1, matchTitle = "Brasil × França", team = "Brasil",
+            direction = Direction.UP, stake = 10, entryOdd = 1.85, exitOdd = 1.91,
+            profit = win(10), windowSeconds = 60, timestampMillis = now - 25 * minute,
+        ),
+        TradeRecord(
+            id = 2, matchTitle = "Alemanha × Itália", team = "Itália",
+            direction = Direction.DOWN, stake = 5, entryOdd = 3.42, exitOdd = 3.47,
+            profit = -5.0, windowSeconds = 120, timestampMillis = now - 1 * hour,
+        ),
+        TradeRecord(
+            id = 3, matchTitle = "Argentina × Espanha", team = "Argentina",
+            direction = Direction.UP, stake = 25, entryOdd = 2.08, exitOdd = 2.15,
+            profit = win(25), windowSeconds = 60, timestampMillis = now - 3 * hour,
+        ),
+        TradeRecord(
+            id = 4, matchTitle = "México × EUA", team = "EUA",
+            direction = Direction.DOWN, stake = 10, entryOdd = 2.92, exitOdd = 2.83,
+            profit = win(10), windowSeconds = 300, timestampMillis = now - 1 * day,
+        ),
+        TradeRecord(
+            id = 5, matchTitle = "Alemanha × Itália", team = "Alemanha",
+            direction = Direction.UP, stake = 10, entryOdd = 1.96, exitOdd = 1.90,
+            profit = -10.0, windowSeconds = 60, timestampMillis = now - 1 * day - 2 * hour,
+        ),
+        TradeRecord(
+            id = 6, matchTitle = "Japão × Coreia do Sul", team = "Japão",
+            direction = Direction.UP, stake = 5, entryOdd = 2.60, exitOdd = 2.60,
+            profit = 0.0, windowSeconds = 30, timestampMillis = now - 2 * day,
+        ),
+    )
+}
+
+/**
+ * MOCK: on-chain activity consistent with [mockHistory] plus the funding
+ * stake/unstake. Replaced by the transaction indexer when the backend lands.
+ */
+private fun mockTransactions(): List<ChainTx> {
+    val now = System.currentTimeMillis()
+    val minute = 60_000L
+    val hour = 60 * minute
+    val day = 24 * hour
+    fun win(stake: Int) = stake * (HomeUiState.MULTIPLIER - 1)
+    return listOf(
+        ChainTx(101, TxKind.TRADE_WIN, win(10), now - 25 * minute, mockSignature()),
+        ChainTx(102, TxKind.TRADE_LOSS, 5.0, now - 1 * hour, mockSignature()),
+        ChainTx(103, TxKind.TRADE_WIN, win(25), now - 3 * hour, mockSignature()),
+        ChainTx(104, TxKind.TRADE_WIN, win(10), now - 1 * day, mockSignature()),
+        ChainTx(105, TxKind.TRADE_LOSS, 10.0, now - 1 * day - 2 * hour, mockSignature()),
+        ChainTx(106, TxKind.UNSTAKE, 30.0, now - 2 * day, mockSignature()),
+        ChainTx(107, TxKind.STAKE, 100.0, now - 3 * day, mockSignature()),
+    )
+}
+
+/** Display-only fake tx signature, already in the truncated "abcd…wxyz" form. */
+private fun mockSignature(): String {
+    val alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+    fun chunk(n: Int) = buildString { repeat(n) { append(alphabet.random()) } }
+    return "${chunk(4)}…${chunk(4)}"
 }

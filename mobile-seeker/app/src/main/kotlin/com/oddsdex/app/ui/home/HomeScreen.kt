@@ -112,8 +112,8 @@ fun HomeScreen(
                     onMatchSelected = viewModel::onMatchSelected,
                     onOpenTerminal = { tab = HomeTab.TERMINAL },
                 )
+                HomeTab.HISTORY -> HistoryScreen(history = state.history)
                 HomeTab.HELP -> HelpScreen()
-                else -> ComingSoon()
             }
         }
         BottomNav(tab, onSelect = { tab = it })
@@ -121,6 +121,14 @@ fun HomeScreen(
 
     if (showPayments) {
         PaymentsSheet(
+            walletUsdc = state.walletUsdc,
+            tradingBalance = state.tradingBalance,
+            busy = state.paymentsBusy,
+            notice = state.paymentsNotice,
+            transactions = state.transactions,
+            onStake = viewModel::onStake,
+            onUnstake = viewModel::onUnstake,
+            onNoticeDismissed = viewModel::onPaymentsNoticeDismissed,
             onDismiss = { showPayments = false },
         )
     }
@@ -180,7 +188,7 @@ private fun Terminal(
                 .align(Alignment.TopStart)
                 .onSizeChanged { topHeightPx = it.height },
         ) {
-            TopBar(onWalletClick, onProfileClick)
+            TopBar(state.tradingBalance, onWalletClick, onProfileClick)
             MatchHeader(
                 match = state.selectedMatch,
                 side = state.selectedSide,
@@ -226,7 +234,11 @@ private fun Terminal(
 }
 
 @Composable
-private fun TopBar(onWalletClick: () -> Unit, onProfileClick: () -> Unit) {
+private fun TopBar(
+    tradingBalance: Double,
+    onWalletClick: () -> Unit,
+    onProfileClick: () -> Unit,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -255,7 +267,7 @@ private fun TopBar(onWalletClick: () -> Unit, onProfileClick: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
-                text = "0.00 USDC",
+                text = String.format(Locale.US, "%.2f USDC", tradingBalance),
                 color = OddsdexColors.TextPrimary,
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
@@ -551,17 +563,6 @@ private fun ResultBanner(result: TradeResult?, onDismiss: () -> Unit) {
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun ComingSoon() {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text(
-            text = stringResource(R.string.coming_soon),
-            color = OddsdexColors.TextSecondary,
-            fontSize = 16.sp,
-        )
     }
 }
 

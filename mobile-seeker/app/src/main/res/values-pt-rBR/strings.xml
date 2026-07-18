@@ -49,6 +49,12 @@
     <string name="tab_profile">Perfil</string>
     <string name="coming_soon">Em breve</string>
 
+    <string name="history_title">Histórico</string>
+    <string name="history_empty">Nenhuma negociação ainda — abra sua primeira posição no terminal.</string>
+    <string name="history_stat_pnl">Resultado (USDC)</string>
+    <string name="history_stat_winrate">Acerto</string>
+    <string name="history_stat_trades">Trades</string>
+
     <string name="games_title">Jogos</string>
     <string name="games_tab_live">Ao vivo</string>
     <string name="games_tab_upcoming">Em breve</string>
@@ -65,6 +71,23 @@
     <string name="payments_stake">Stake</string>
     <string name="payments_unstake">Unstake</string>
     <string name="payments_transactions">Transações</string>
+    <string name="payments_trading_balance">Conta de negociação</string>
+    <string name="payments_wallet_balance">Carteira: %1$s</string>
+    <string name="payments_stake_desc">Envie USDC da sua carteira para a conta de negociação para poder apostar.</string>
+    <string name="payments_unstake_desc">Devolva o saldo da conta de negociação para a sua carteira em USDC.</string>
+    <string name="payments_available">Disponível: %1$s</string>
+    <string name="payments_max">MAX</string>
+    <string name="payments_amount_too_high">Valor maior que o saldo disponível.</string>
+    <string name="payments_receive_trading">Você recebe %1$s na conta de negociação</string>
+    <string name="payments_receive_wallet">Você recebe %1$s na sua carteira</string>
+    <string name="payments_confirming">Confirmando na blockchain…</string>
+    <string name="payments_stake_done">Stake confirmado: %1$s na sua conta de negociação.</string>
+    <string name="payments_unstake_done">Unstake confirmado: %1$s de volta na carteira.</string>
+    <string name="payments_tx_empty">Nenhuma transação ainda.</string>
+    <string name="tx_stake">Stake</string>
+    <string name="tx_unstake">Unstake</string>
+    <string name="tx_win">Ganho de trade</string>
+    <string name="tx_loss">Perda de trade</string>
     <string name="address_copy">Copiar endereço</string>
     <string name="address_copied">Endereço copiado</string>
 
