@@ -10,7 +10,7 @@ use {
         associated_token::{self, get_associated_token_address, spl_associated_token_account},
         token::spl_token,
     },
-    betting_engine::Bet,
+    betting_engine::{Bet, Pool},
     litesvm::{types::TransactionMetadata, LiteSVM},
     solana_keypair::Keypair,
     solana_message::{Message, VersionedMessage},
@@ -60,6 +60,113 @@ fn setup() -> TestEnv {
         authority,
         usdc_mint,
     }
+}
+
+// ---------------------------------------------------------------------------
+// Pool helpers
+// ---------------------------------------------------------------------------
+
+fn pool_pda(match_id: &str) -> Pubkey {
+    Pubkey::find_program_address(&[b"pool", match_id.as_bytes()], &betting_engine::id()).0
+}
+
+fn pool_vault_authority(match_id: &str) -> Pubkey {
+    Pubkey::find_program_address(&[b"vault", match_id.as_bytes()], &betting_engine::id()).0
+}
+
+fn lp_position_pda(pool: &Pubkey, owner: &Pubkey) -> Pubkey {
+    Pubkey::find_program_address(
+        &[b"lp", pool.as_ref(), owner.as_ref()],
+        &betting_engine::id(),
+    )
+    .0
+}
+
+fn build_create_pool_ix(
+    authority: &Pubkey,
+    mint: &Pubkey,
+    match_id: &str,
+    fee_rate: u16,
+) -> Instruction {
+    let pool = pool_pda(match_id);
+    let vault_authority = pool_vault_authority(match_id);
+    let vault = get_associated_token_address(&vault_authority, mint);
+
+    Instruction::new_with_bytes(
+        betting_engine::id(),
+        &betting_engine::instruction::CreatePool {
+            match_id: match_id.to_string(),
+            fee_rate,
+        }
+        .data(),
+        betting_engine::accounts::CreatePool {
+            authority: *authority,
+            pool,
+            mint: *mint,
+            vault_authority,
+            vault,
+            token_program: spl_token::ID,
+            associated_token_program: associated_token::ID,
+            system_program: system_program::ID,
+        }
+        .to_account_metas(None),
+    )
+}
+
+fn build_deposit_ix(owner: &Pubkey, mint: &Pubkey, match_id: &str, amount: u64) -> Instruction {
+    let pool = pool_pda(match_id);
+    let lp_position = lp_position_pda(&pool, owner);
+    let vault = get_associated_token_address(&pool_vault_authority(match_id), mint);
+    let owner_token_account = get_associated_token_address(owner, mint);
+
+    Instruction::new_with_bytes(
+        betting_engine::id(),
+        &betting_engine::instruction::Deposit { amount }.data(),
+        betting_engine::accounts::Deposit {
+            owner: *owner,
+            pool,
+            lp_position,
+            mint: *mint,
+            vault,
+            owner_token_account,
+            token_program: spl_token::ID,
+            system_program: system_program::ID,
+        }
+        .to_account_metas(None),
+    )
+}
+
+fn read_pool(svm: &LiteSVM, match_id: &str) -> Pool {
+    let pool = pool_pda(match_id);
+    let account = svm.get_account(&pool).unwrap();
+    Pool::try_deserialize(&mut account.data.as_slice()).unwrap()
+}
+
+fn setup_pool_with_liquidity(env: &mut TestEnv, amount: u64) {
+    let lp = Keypair::new();
+    env.svm.airdrop(&lp.pubkey(), 10_000_000_000).unwrap();
+    let lp_ata = create_ata(&mut env.svm, &env.authority, &lp.pubkey(), &env.usdc_mint);
+    mint_to(
+        &mut env.svm,
+        &env.authority,
+        &env.usdc_mint,
+        &lp_ata,
+        &env.authority,
+        amount,
+    );
+
+    send_tx(
+        &mut env.svm,
+        build_create_pool_ix(&env.authority.pubkey(), &env.usdc_mint, MATCH_ID, 200),
+        &env.authority,
+    )
+    .unwrap();
+    send_tx(
+        &mut env.svm,
+        build_deposit_ix(&lp.pubkey(), &env.usdc_mint, MATCH_ID, amount),
+        &lp,
+    )
+    .unwrap();
 }
 
 fn create_mint(
@@ -230,8 +337,8 @@ fn build_place_bet_ix(
     let match_account =
         Pubkey::find_program_address(&[b"match", match_id.as_bytes()], &oracle_program_id).0;
 
-    let vault_authority =
-        Pubkey::find_program_address(&[b"escrow", match_id.as_bytes()], &program_id).0;
+    let pool = pool_pda(match_id);
+    let vault_authority = pool_vault_authority(match_id);
 
     let vault_token_account = get_associated_token_address(&vault_authority, usdc_mint);
     let user_token_account = get_associated_token_address(&user.pubkey(), usdc_mint);
@@ -250,11 +357,11 @@ fn build_place_bet_ix(
             user_token_account,
             vault: vault_token_account,
             vault_authority,
+            pool,
             match_account,
             bet: bet_pda,
             mint: *usdc_mint,
             token_program: spl_token::ID,
-            associated_token_program: associated_token::ID,
             system_program: system_program::ID,
         }
         .to_account_metas(None),
@@ -282,8 +389,8 @@ fn build_settle_bet_ix(
     )
     .0;
 
-    let vault_authority =
-        Pubkey::find_program_address(&[b"escrow", match_id.as_bytes()], &program_id).0;
+    let pool = pool_pda(match_id);
+    let vault_authority = pool_vault_authority(match_id);
 
     let vault_token_account = get_associated_token_address(&vault_authority, usdc_mint);
     let user_token_account = get_associated_token_address(user, usdc_mint);
@@ -297,6 +404,7 @@ fn build_settle_bet_ix(
         betting_engine::accounts::SettleBet {
             authority: authority.pubkey(),
             bet: bet_pda,
+            pool,
             vault: vault_token_account,
             vault_authority,
             user_token_account,
@@ -347,6 +455,7 @@ fn test_place_bet_up_success() {
 
     // Create oracle match with odds
     create_oracle_match(&mut env.svm, &env.authority, MATCH_ID, 6500, 3000, 500);
+    setup_pool_with_liquidity(&mut env, 10_000_000_000);
 
     // Fund user
     env.svm.airdrop(&user.pubkey(), 10_000_000_000).unwrap();
@@ -371,7 +480,7 @@ fn test_place_bet_up_success() {
     assert_eq!(bet.match_id, MATCH_ID);
     assert_eq!(bet.direction, 0); // Up
     assert_eq!(bet.amount, amount);
-    assert_eq!(bet.payout, amount * 18 / 10); // 180 USDC
+    assert_eq!(bet.payout, 176_400_000); // 98 USDC effective * 1.8
     assert_eq!(bet.status, 0); // Open
     assert_eq!(bet.odds_at_entry, 6500);
     assert_eq!(bet.window_secs, 60);
@@ -379,6 +488,13 @@ fn test_place_bet_up_success() {
 
     // Verify USDC transferred from user
     assert_eq!(get_token_balance(&env.svm, &user_ata), 0);
+
+    let pool = read_pool(&env.svm, MATCH_ID);
+    let vault = get_associated_token_address(&pool_vault_authority(MATCH_ID), &env.usdc_mint);
+    assert_eq!(get_token_balance(&env.svm, &vault), 10_100_000_000);
+    assert_eq!(pool.total_liquidity, 10_100_000_000);
+    assert_eq!(pool.locked_liquidity, 176_400_000);
+    assert_eq!(pool.protocol_fees_accumulated, 500_000);
 }
 
 #[test]
@@ -389,6 +505,7 @@ fn test_place_bet_down_success() {
     let nonce = 0u32;
 
     create_oracle_match(&mut env.svm, &env.authority, MATCH_ID, 6500, 3000, 500);
+    setup_pool_with_liquidity(&mut env, 10_000_000_000);
 
     env.svm.airdrop(&user.pubkey(), 10_000_000_000).unwrap();
     let user_ata = create_ata(&mut env.svm, &user, &user.pubkey(), &env.usdc_mint);
@@ -409,7 +526,7 @@ fn test_place_bet_down_success() {
     let bet = get_bet_account(&env.svm, MATCH_ID, &user.pubkey(), nonce);
     assert_eq!(bet.direction, 1); // Down
     assert_eq!(bet.amount, amount);
-    assert_eq!(bet.payout, amount * 18 / 10); // 90 USDC
+    assert_eq!(bet.payout, 88_200_000); // 49 USDC effective * 1.8
     assert_eq!(bet.window_secs, 300);
 }
 
@@ -421,6 +538,7 @@ fn test_reject_invalid_window() {
     let nonce = 0u32;
 
     create_oracle_match(&mut env.svm, &env.authority, MATCH_ID, 6500, 3000, 500);
+    setup_pool_with_liquidity(&mut env, 10_000_000_000);
 
     env.svm.airdrop(&user.pubkey(), 10_000_000_000).unwrap();
     let user_ata = create_ata(&mut env.svm, &user, &user.pubkey(), &env.usdc_mint);
@@ -450,6 +568,7 @@ fn test_reject_bet_too_small() {
     let nonce = 0u32;
 
     create_oracle_match(&mut env.svm, &env.authority, MATCH_ID, 6500, 3000, 500);
+    setup_pool_with_liquidity(&mut env, 10_000_000_000);
 
     env.svm.airdrop(&user.pubkey(), 10_000_000_000).unwrap();
     let user_ata = create_ata(&mut env.svm, &user, &user.pubkey(), &env.usdc_mint);
@@ -475,6 +594,7 @@ fn test_reject_insufficient_funds() {
     let nonce = 0u32;
 
     create_oracle_match(&mut env.svm, &env.authority, MATCH_ID, 6500, 3000, 500);
+    setup_pool_with_liquidity(&mut env, 10_000_000_000);
 
     env.svm.airdrop(&user.pubkey(), 10_000_000_000).unwrap();
     // Create ATA but do NOT mint any USDC
@@ -485,6 +605,36 @@ fn test_reject_insufficient_funds() {
     assert!(
         res.is_err(),
         "Expected insufficient funds error but tx succeeded"
+    );
+}
+
+#[test]
+fn test_reject_pool_without_enough_liquidity() {
+    let mut env = setup();
+    let user = Keypair::new();
+    let amount = 100_000_000; // payout is 176.4 USDC after fee
+    let nonce = 0u32;
+
+    create_oracle_match(&mut env.svm, &env.authority, MATCH_ID, 6500, 3000, 500);
+    setup_pool_with_liquidity(&mut env, 100_000_000); // only 100 USDC available
+
+    env.svm.airdrop(&user.pubkey(), 10_000_000_000).unwrap();
+    let user_ata = create_ata(&mut env.svm, &user, &user.pubkey(), &env.usdc_mint);
+    mint_to(
+        &mut env.svm,
+        &env.authority,
+        &env.usdc_mint,
+        &user_ata,
+        &env.authority,
+        amount,
+    );
+
+    let ix = build_place_bet_ix(&user, MATCH_ID, &env.usdc_mint, 0, 60, amount, nonce);
+    let res = send_tx(&mut env.svm, ix, &user);
+
+    assert!(
+        res.is_err(),
+        "Expected InsufficientLiquidity error but tx succeeded"
     );
 }
 
@@ -511,6 +661,7 @@ fn setup_placed_bet(
         3000,
         10000 - odds_home - 3000,
     );
+    setup_pool_with_liquidity(env, 10_000_000_000);
 
     env.svm.airdrop(&user.pubkey(), 10_000_000_000).unwrap();
     let user_ata = create_ata(&mut env.svm, &user, &user.pubkey(), &env.usdc_mint);
@@ -521,27 +672,6 @@ fn setup_placed_bet(
         &user_ata,
         &env.authority,
         amount,
-    );
-
-    // Fund the vault with enough USDC to pay out winnings
-    let program_id = betting_engine::id();
-    let vault_authority =
-        Pubkey::find_program_address(&[b"escrow", MATCH_ID.as_bytes()], &program_id).0;
-    let vault_ata = create_ata(
-        &mut env.svm,
-        &env.authority,
-        &vault_authority,
-        &env.usdc_mint,
-    );
-    let payout = amount * 18 / 10;
-    // Mint extra to vault so it can cover payouts (the place_bet will also transfer `amount`)
-    mint_to(
-        &mut env.svm,
-        &env.authority,
-        &env.usdc_mint,
-        &vault_ata,
-        &env.authority,
-        payout,
     );
 
     let ix = build_place_bet_ix(
@@ -562,7 +692,7 @@ fn setup_placed_bet(
 fn test_settle_up_wins() {
     let mut env = setup();
     let amount = 100_000_000; // 100 USDC
-    let payout = amount * 18 / 10; // 180 USDC
+    let payout = 176_400_000; // 98 USDC effective * 1.8
     let nonce = 0u32;
 
     let user = setup_placed_bet(&mut env, 0, amount, 6500, 60); // direction=Up
@@ -627,7 +757,7 @@ fn test_settle_up_loses() {
 fn test_settle_down_wins() {
     let mut env = setup();
     let amount = 100_000_000;
-    let payout = amount * 18 / 10;
+    let payout = 176_400_000; // 98 USDC effective * 1.8
     let nonce = 0u32;
 
     let user = setup_placed_bet(&mut env, 1, amount, 6500, 60); // direction=Down
