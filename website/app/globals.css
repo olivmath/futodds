@@ -1,0 +1,141 @@
+@import "tailwindcss";
+
+/* ── Volt Court tokens — source of truth: mobile-seeker/brand.md (verbatim) ── */
+:root {
+  --bg-base: #081310;
+  --bg-elevated: #0f1e18;
+  --chip-surface: #14261f;
+  --fg-base: #f0f5f2;
+  --fg-muted: #85948b;
+  --primary: #2fe083;
+  --primary-soft: #83edaf;
+  --down: #fa5a6a;
+  --series-cyan: #41d9e8;
+  --cta-from: #00e5c9;
+  --cta-to: #2fe083;
+}
+
+@theme inline {
+  --color-bg: var(--bg-base);
+  --color-surface: var(--bg-elevated);
+  --color-chip: var(--chip-surface);
+  --color-fg: var(--fg-base);
+  --color-fg-muted: var(--fg-muted);
+  --color-primary: var(--primary);
+  --color-primary-soft: var(--primary-soft);
+  --color-down: var(--down);
+  --color-cyan-series: var(--series-cyan);
+  --font-sans: var(--font-inter);
+  --font-mono: var(--font-jetbrains-mono);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--bg-base);
+  color: var(--fg-base);
+  font-family: var(--font-inter), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Every number on the page renders tabular in mono (brand.md rule) */
+.num {
+  font-family: var(--font-jetbrains-mono), monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Primary gradient CTA — #00E5C9 → #2FE083, brand.md `cta` */
+.cta-gradient {
+  background-image: linear-gradient(90deg, var(--cta-from), var(--cta-to));
+}
+
+/* ── Entrance choreography ─────────────────────────────────────────── */
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes bar-grow {
+  from {
+    transform: scaleY(0.35);
+    opacity: 0;
+  }
+  to {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+}
+
+.anim-rise {
+  animation: rise-in 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.anim-fade {
+  animation: fade-in 0.7s ease-out both;
+}
+
+.anim-bar {
+  transform-origin: bottom;
+  animation: bar-grow 1s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Scroll reveal (driven by IntersectionObserver in <Reveal/>) */
+.reveal {
+  opacity: 0;
+  transform: translateY(28px);
+  transition:
+    opacity 0.6s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.reveal.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .anim-rise,
+  .anim-fade,
+  .anim-bar {
+    animation: none;
+  }
+  .reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+/* Testimonial carousel scroll-snap */
+.snap-row {
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+}
+
+.snap-row::-webkit-scrollbar {
+  display: none;
+}
+
+.snap-row > * {
+  scroll-snap-align: center;
+}
