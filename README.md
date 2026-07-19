@@ -66,9 +66,9 @@ docs/
 | Phase | Description | Status |
 |---|---|---|
 | 0 | Oracle Smoke Test | Done |
-| 1a | place_bet with escrow | Pending |
-| 1b | settle_bet | Pending |
-| 1c | Backend oracle + canonical realtime | In progress |
+| 1a | place_bet with escrow | Done |
+| 1b | settle_bet | Done |
+| 1c | Backend oracle + canonical realtime | Code done; manual testnet validation pending |
 | 2a | Pool + deposit | Pending |
 | 2b | Integrate betting with pool | Pending |
 | 2c | withdraw + claim_fees | Pending |
@@ -95,6 +95,8 @@ cargo test
 cd app && npm test && npm run build
 cd ../backend && npm test
 ```
+
+For a full local validator deploy with backend, frontend, and browser wallet, use [`docs/localnet.md`](docs/localnet.md).
 
 ## Backend
 

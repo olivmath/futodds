@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "node --watch src/server.js",
+    "dev:local": "set -a; . ./.env.local; set +a; node --watch src/server.js",
     "start": "node src/server.js",
+    "start:local": "set -a; . ./.env.local; set +a; node src/server.js",
     "test": "node --test"
   },
   "dependencies": {

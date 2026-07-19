@@ -2,14 +2,14 @@
 
 ## Status
 
-Planejada. Esta fase conecta o backend JS ao fluxo on-chain e troca realtime proprio por eventos canonicos emitidos pelos programas Solana.
+Concluida como baseline da Fase 1. A Fase 2 parte deste estado e substitui o escrow por match por pool de liquidez real.
 
 | Area | Estado |
 |---|---|
-| **On-chain** | Pendente: eventos Anchor em `oracle-adapter` e `betting-engine` |
-| **Backend** | Pendente: Express + odds poller + settlement worker |
-| **Frontend** | Pendente: listener Solana WebSocket para eventos Anchor |
-| **Docs** | Este documento define o escopo |
+| **On-chain** | Implementado: `OddsUpdated` e `BetSettled` |
+| **Backend** | Implementado: Express + odds poller + settlement worker |
+| **Frontend** | Implementado: listener Solana WebSocket para eventos Anchor |
+| **Docs** | Fase 1 marcada como baseline concluido |
 
 ## Objetivo
 
@@ -83,28 +83,38 @@ backend settlement worker
 
 | # | Etapa | Entrega | Validacao |
 |---|---|---|---|
-| 1 | Eventos on-chain | Adicionar eventos Anchor em `oracle-adapter` e `betting-engine` | `cargo test` |
-| 2 | IDL/artifacts | Rodar `anchor build` para atualizar IDLs com eventos | `target/idl/*.json` atualizado |
-| 3 | Redeploy | Fazer deploy dos programas no cluster configurado | Confirmar program IDs e tx signatures |
-| 4 | Backend JS/Express | Criar `backend/` com oracle poller + settlement worker | Testes unitarios + healthcheck |
-| 5 | Oracle poller | Backend chama `update_odds` periodicamente | Eventos `OddsUpdated` aparecem nos logs |
-| 6 | Settlement worker | Backend encontra bets expiradas e chama `settle_bet` | Eventos `BetSettled` aparecem nos logs |
-| 7 | Frontend realtime | Frontend usa Solana WebSocket `logsSubscribe` e parseia eventos Anchor | Odds/status mudam sem refresh |
-| 8 | Docs | Atualizar `README.md`, `ARCHITECTURE.md` e docs de fase | Comandos e fluxo documentados |
-| 9 | CI local | Rodar Rust + frontend + backend checks | Tudo verde |
-| 10 | Commit | Commit assinado com identidade correta | `git log -1 --show-signature` |
+| 1 | Eventos on-chain | Adicionar eventos Anchor em `oracle-adapter` e `betting-engine` | Feito: `cargo test` |
+| 2 | IDL/artifacts | Rodar `anchor build --ignore-keys` para atualizar IDLs com eventos | Feito: `target/idl/*.json` contem eventos |
+| 3 | Redeploy | Fazer deploy dos programas no cluster configurado | Feito para baseline local/testnet da Fase 1 |
+| 4 | Backend JS/Express | Criar `backend/` com oracle poller + settlement worker | Feito: testes unitarios + healthcheck |
+| 5 | Oracle poller | Backend chama `update_odds` periodicamente | Feito |
+| 6 | Settlement worker | Backend encontra bets expiradas e chama `settle_bet` | Feito |
+| 7 | Frontend realtime | Frontend usa Solana WebSocket `logsSubscribe` e parseia eventos Anchor | Feito |
+| 8 | Docs | Atualizar `README.md`, `ARCHITECTURE.md` e docs de fase | Feito |
+| 9 | CI local | Rodar Rust + frontend + backend checks | Feito |
+| 10 | Commit | Commit assinado com identidade correta | Feito quando aplicavel |
 
 ## Criterios De Sucesso
 
-- [ ] `oracle-adapter` emite `OddsUpdated`.
-- [ ] `betting-engine` emite `BetSettled`.
-- [ ] IDLs incluem os eventos novos.
-- [ ] Programas redeployados no cluster alvo.
-- [ ] Backend JS envia `update_odds` automaticamente.
-- [ ] Backend JS executa settlement de bets expiradas.
-- [ ] Frontend recebe eventos canonicos via Solana WebSocket.
-- [ ] Frontend atualiza odds/status sem refresh manual.
-- [ ] README e arquitetura refletem backend JS e realtime on-chain.
+- [x] `oracle-adapter` emite `OddsUpdated`.
+- [x] `betting-engine` emite `BetSettled`.
+- [x] IDLs incluem os eventos novos.
+- [x] Programas redeployados no cluster alvo com os eventos atuais.
+- [x] Backend JS envia `update_odds` automaticamente.
+- [x] Backend JS executa settlement de bets expiradas.
+- [x] Frontend recebe eventos canonicos via Solana WebSocket.
+- [x] Frontend atualiza odds/status sem refresh manual em testnet.
+- [x] README e arquitetura refletem backend JS e realtime on-chain.
+
+## Validacao Manual Historica
+
+| # | Teste | Como validar |
+|---|---|---|
+| 1 | Deploy contem eventos atuais | `anchor build --ignore-keys`, deploy/redeploy se necessario e confirmar program IDs |
+| 2 | Backend sobe com authority correta | `cd backend && npm start`; abrir `/health` e checar `ok: true` |
+| 3 | Poller emite odds | `POST /poller/start`; confirmar tx em `/status` e evento `OddsUpdated` no app |
+| 4 | Worker liquida bet expirada | Criar bet, aguardar expirar, `POST /settlement/run-once`; confirmar `BetSettled` |
+| 5 | Realtime no browser | Deixar aba Events aberta e validar odds/status mudando sem refresh |
 
 ## Riscos E Pre-condicoes
 

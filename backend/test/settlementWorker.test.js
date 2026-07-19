@@ -39,3 +39,31 @@ test("settlement worker settles only open expired bets", async () => {
     "settlement.run.done",
   ]);
 });
+
+test("settlement worker records a failed bet and continues the run", async () => {
+  const settled = [];
+  const store = createStore([{ id: "match_1", odds: { home: 6700, away: 2800, draw: 500 } }]);
+  const worker = createSettlementWorker({
+    store,
+    logger: { info() {}, error() {} },
+    now: () => 1_700_000_100,
+    fetchOpenBets: async () => [
+      { user: "user_1", matchId: "match_1", nonce: 1, expiresAt: 1_700_000_090, status: 0 },
+      { user: "user_2", matchId: "match_1", nonce: 2, expiresAt: 1_700_000_080, status: 0 },
+    ],
+    settleBet: async (bet) => {
+      if (bet.nonce === 1) {
+        throw new Error("settlement tx failed");
+      }
+      settled.push(bet.nonce);
+      return `settled_${bet.nonce}`;
+    },
+  });
+
+  const result = await worker.runOnce();
+
+  assert.deepEqual(result, { checked: 2, settled: 1, failed: 1 });
+  assert.deepEqual(settled, [2]);
+  assert.equal(store.status.errors[0].message, "settlement tx failed");
+  assert.equal(store.status.txs[0].signature, "settled_2");
+});

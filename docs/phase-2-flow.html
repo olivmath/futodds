@@ -1,0 +1,1180 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>FutOdds Fase 2 - Simulador de Tokenomics</title>
+    <style>
+      :root {
+        --bg: #f4f2ea;
+        --ink: #17211d;
+        --muted: #617169;
+        --panel: #fffdfa;
+        --line: #d6dbd2;
+        --green: #0b7f55;
+        --green-2: #bfe9cf;
+        --blue: #214f9a;
+        --blue-2: #dce9ff;
+        --amber: #c8841f;
+        --amber-2: #fff0c9;
+        --red: #b63f31;
+        --red-2: #ffe0db;
+        --black: #17211d;
+        --shadow: 0 18px 48px rgba(23, 33, 29, 0.13);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        color: var(--ink);
+        background:
+          linear-gradient(90deg, rgba(23, 33, 29, 0.04) 1px, transparent 1px),
+          linear-gradient(rgba(23, 33, 29, 0.04) 1px, transparent 1px),
+          var(--bg);
+        background-size: 28px 28px;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      button,
+      input {
+        font: inherit;
+      }
+
+      .app {
+        width: min(1240px, calc(100% - 28px));
+        margin: 0 auto;
+        padding: 28px 0 52px;
+      }
+
+      header {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 24px;
+        align-items: end;
+        margin-bottom: 18px;
+      }
+
+      .eyebrow {
+        color: var(--green);
+        font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+        font-size: 13px;
+        font-weight: 900;
+        letter-spacing: 0;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        max-width: 860px;
+        margin: 8px 0 0;
+        font-family: Georgia, "Times New Roman", serif;
+        font-size: clamp(40px, 6vw, 78px);
+        line-height: 0.96;
+        letter-spacing: 0;
+      }
+
+      .subhead {
+        max-width: 740px;
+        margin: 16px 0 0;
+        color: var(--muted);
+        font-size: 18px;
+        line-height: 1.45;
+      }
+
+      .top-actions {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+      }
+
+      .button {
+        border: 1px solid var(--black);
+        border-radius: 8px;
+        padding: 11px 14px;
+        background: var(--black);
+        color: white;
+        cursor: pointer;
+        font-weight: 850;
+        box-shadow: 0 8px 0 rgba(23, 33, 29, 0.12);
+      }
+
+      .button.secondary {
+        background: var(--panel);
+        color: var(--black);
+      }
+
+      .button:focus-visible,
+      .scenario-button:focus-visible,
+      input:focus-visible {
+        outline: 3px solid var(--amber);
+        outline-offset: 2px;
+      }
+
+      .dashboard {
+        display: grid;
+        grid-template-columns: 270px 1fr 340px;
+        gap: 16px;
+        align-items: start;
+      }
+
+      .panel {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        box-shadow: var(--shadow);
+      }
+
+      .panel-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: center;
+        border-bottom: 1px solid var(--line);
+        padding: 14px 16px;
+      }
+
+      .panel-head h2,
+      .panel-head h3 {
+        margin: 0;
+        font-size: 15px;
+        letter-spacing: 0;
+        text-transform: uppercase;
+      }
+
+      .panel-body {
+        padding: 16px;
+      }
+
+      .scenario-list {
+        display: grid;
+        gap: 10px;
+      }
+
+      .scenario-button {
+        display: grid;
+        gap: 4px;
+        width: 100%;
+        border: 1px solid var(--line);
+        border-left: 6px solid var(--muted);
+        border-radius: 8px;
+        padding: 12px;
+        background: white;
+        color: var(--ink);
+        cursor: pointer;
+        text-align: left;
+      }
+
+      .scenario-button strong {
+        font-size: 14px;
+      }
+
+      .scenario-button span {
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.35;
+      }
+
+      .scenario-button.active {
+        border-color: var(--green);
+        border-left-color: var(--green);
+        background: #f0fbf3;
+      }
+
+      .field-grid {
+        display: grid;
+        gap: 10px;
+        margin-top: 16px;
+      }
+
+      label {
+        display: grid;
+        gap: 6px;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 800;
+        text-transform: uppercase;
+      }
+
+      input {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 10px 11px;
+        background: white;
+        color: var(--ink);
+        font-weight: 800;
+      }
+
+      .stage {
+        min-height: 620px;
+        overflow: hidden;
+      }
+
+      .stage-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 14px;
+        padding: 16px;
+      }
+
+      .wallet,
+      .vault,
+      .oracle {
+        position: relative;
+        min-height: 188px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: white;
+        padding: 16px;
+        overflow: hidden;
+      }
+
+      .vault {
+        border: 2px solid var(--green);
+        background: linear-gradient(180deg, white, #eefaf2);
+      }
+
+      .oracle {
+        border: 2px solid var(--blue);
+        background: linear-gradient(180deg, white, #edf4ff);
+      }
+
+      .wallet h3,
+      .vault h3,
+      .oracle h3 {
+        margin: 0;
+        font-size: 16px;
+      }
+
+      .wallet p,
+      .vault p,
+      .oracle p {
+        margin: 6px 0 0;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.35;
+      }
+
+      .balance {
+        display: block;
+        margin-top: 16px;
+        font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+        font-size: 22px;
+        font-weight: 950;
+      }
+
+      .token {
+        position: absolute;
+        z-index: 3;
+        width: 28px;
+        height: 28px;
+        border: 2px solid #0d5c40;
+        border-radius: 999px;
+        background: var(--green-2);
+        color: #0d5c40;
+        display: grid;
+        place-items: center;
+        font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+        font-size: 12px;
+        font-weight: 950;
+        opacity: 0;
+        transform: translate(0, 0) scale(0.75);
+      }
+
+      .token.big {
+        width: 42px;
+        height: 42px;
+        background: var(--amber-2);
+        border-color: var(--amber);
+        color: #81560e;
+      }
+
+      .stage.running .token.lp {
+        animation: lpDeposit 900ms ease forwards;
+      }
+
+      .stage.running .token.bet {
+        animation: userBet 900ms ease forwards 950ms;
+      }
+
+      .stage.running .token.fee {
+        animation: feeSplit 900ms ease forwards 1850ms;
+      }
+
+      .stage.running[data-outcome="win"] .token.payout.win {
+        animation: payoutWin 900ms ease forwards 3600ms;
+      }
+
+      .stage.running[data-outcome="lose"] .token.payout.lose {
+        animation: payoutLose 900ms ease forwards 3600ms;
+      }
+
+      @keyframes lpDeposit {
+        0% { opacity: 1; transform: translate(0, 0) scale(0.75); }
+        80% { opacity: 1; transform: translate(290px, 56px) scale(1); }
+        100% { opacity: 0; transform: translate(290px, 56px) scale(0.85); }
+      }
+
+      @keyframes userBet {
+        0% { opacity: 1; transform: translate(0, 0) scale(0.75); }
+        80% { opacity: 1; transform: translate(-290px, 56px) scale(1); }
+        100% { opacity: 0; transform: translate(-290px, 56px) scale(0.85); }
+      }
+
+      @keyframes feeSplit {
+        0% { opacity: 1; transform: translate(0, 0) scale(0.75); }
+        60% { opacity: 1; transform: translate(-88px, -74px) scale(1); }
+        100% { opacity: 0; transform: translate(-88px, -74px) scale(0.85); }
+      }
+
+      @keyframes payoutWin {
+        0% { opacity: 1; transform: translate(0, 0) scale(0.75); }
+        80% { opacity: 1; transform: translate(290px, -58px) scale(1); }
+        100% { opacity: 0; transform: translate(290px, -58px) scale(0.85); }
+      }
+
+      @keyframes payoutLose {
+        0% { opacity: 1; transform: translate(0, 0) scale(0.75); }
+        70% { opacity: 1; transform: translate(0, 0) scale(1.1); }
+        100% { opacity: 0; transform: translate(0, 0) scale(0.85); }
+      }
+
+      .token.lp { left: 58px; top: 122px; }
+      .token.bet { right: 58px; top: 122px; }
+      .token.fee { left: calc(50% - 14px); top: 156px; }
+      .token.payout { left: calc(50% - 21px); top: 116px; }
+
+      .timeline {
+        display: grid;
+        grid-template-columns: repeat(6, 1fr);
+        gap: 8px;
+        padding: 0 16px 16px;
+      }
+
+      .step {
+        min-height: 104px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: white;
+        padding: 12px;
+        transition: background 180ms ease, border-color 180ms ease, transform 180ms ease;
+      }
+
+      .step.active {
+        border-color: var(--green);
+        background: #edfaf2;
+        transform: translateY(-2px);
+      }
+
+      .step b {
+        display: block;
+        margin-bottom: 7px;
+        font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+        font-size: 12px;
+      }
+
+      .step span {
+        display: block;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.35;
+      }
+
+      .meter-stack {
+        display: grid;
+        gap: 14px;
+      }
+
+      .metric {
+        display: grid;
+        gap: 7px;
+      }
+
+      .metric-top {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        font-size: 13px;
+        font-weight: 850;
+      }
+
+      .bar {
+        height: 14px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: #ebece6;
+        overflow: hidden;
+      }
+
+      .fill {
+        width: 0%;
+        height: 100%;
+        border-radius: inherit;
+        background: var(--green);
+        transition: width 320ms ease;
+      }
+
+      .fill.locked {
+        background: var(--amber);
+      }
+
+      .fill.loss {
+        background: var(--red);
+      }
+
+      .ledger-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 10px;
+      }
+
+      .ledger-card {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: white;
+        padding: 12px;
+      }
+
+      .ledger-card span {
+        display: block;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 850;
+        text-transform: uppercase;
+      }
+
+      .ledger-card strong {
+        display: block;
+        margin-top: 8px;
+        font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+        font-size: 18px;
+      }
+
+      .checks {
+        display: grid;
+        gap: 8px;
+      }
+
+      .check {
+        display: grid;
+        grid-template-columns: 22px 1fr auto;
+        gap: 8px;
+        align-items: center;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: white;
+        padding: 10px;
+        font-size: 13px;
+      }
+
+      .check .ok {
+        width: 18px;
+        height: 18px;
+        border-radius: 999px;
+        background: var(--green);
+      }
+
+      .check.fail .ok {
+        background: var(--red);
+      }
+
+      .check code {
+        color: var(--muted);
+        font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+        font-size: 12px;
+      }
+
+      .formula-panel {
+        margin-top: 16px;
+        border: 1px solid var(--line);
+        border-left: 8px solid var(--amber);
+        border-radius: 8px;
+        background: #fff9ed;
+        padding: 13px;
+        color: #4c3a18;
+        font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+        font-size: 12px;
+        line-height: 1.55;
+        white-space: pre-wrap;
+      }
+
+      .event-log {
+        max-height: 180px;
+        overflow: auto;
+        border-top: 1px solid var(--line);
+        background: #101915;
+        color: #ddf3e7;
+        font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+        font-size: 12px;
+      }
+
+      .event-log div {
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        padding: 9px 12px;
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        border-radius: 999px;
+        padding: 5px 9px;
+        background: var(--blue-2);
+        color: var(--blue);
+        font-size: 12px;
+        font-weight: 850;
+      }
+
+      .final {
+        margin-top: 16px;
+        border: 2px solid var(--black);
+        border-radius: 8px;
+        background: var(--black);
+        color: white;
+        padding: 16px;
+      }
+
+      .final strong {
+        display: block;
+        margin-bottom: 8px;
+        font-size: 18px;
+      }
+
+      .final p {
+        margin: 0;
+        color: #e4ede8;
+        line-height: 1.42;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        html {
+          scroll-behavior: auto;
+        }
+
+        *,
+        *::before,
+        *::after {
+          animation-duration: 1ms !important;
+          animation-iteration-count: 1 !important;
+          transition-duration: 1ms !important;
+        }
+      }
+
+      @media (max-width: 1120px) {
+        .dashboard {
+          grid-template-columns: 1fr;
+        }
+
+        header {
+          grid-template-columns: 1fr;
+        }
+
+        .top-actions {
+          justify-content: flex-start;
+        }
+      }
+
+      @media (max-width: 760px) {
+        .stage-grid,
+        .timeline,
+        .ledger-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .stage {
+          min-height: auto;
+        }
+
+        .token {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="app">
+      <header>
+        <div>
+          <div class="eyebrow">FutOdds Fase 2 / simulador</div>
+          <h1>Veja o dinheiro andando e confira a tokenomics.</h1>
+          <p class="subhead">
+            Rode cenarios para validar o modelo: LP deposita, user aposta, fee
+            separa, payout trava, settlement paga ou captura valor para o pool.
+          </p>
+        </div>
+        <div class="top-actions">
+          <button class="button" id="play">Rodar sequencia</button>
+          <button class="button secondary" id="reset">Reset</button>
+        </div>
+      </header>
+
+      <section class="dashboard" aria-label="Simulador de tokenomics">
+        <aside class="panel">
+          <div class="panel-head">
+            <h2>Cenarios</h2>
+            <span class="pill" id="scenario-pill">User ganha</span>
+          </div>
+          <div class="panel-body">
+            <div class="scenario-list" id="scenario-list">
+              <button class="scenario-button active" data-scenario="win">
+                <strong>User ganha</strong>
+                <span>Pool paga o payout. LP perde principal, mas recebe fee.</span>
+              </button>
+              <button class="scenario-button" data-scenario="lose">
+                <strong>User perde</strong>
+                <span>Stake fica no pool. LP ganha com a aposta perdida.</span>
+              </button>
+              <button class="scenario-button" data-scenario="locked">
+                <strong>Withdraw bloqueado</strong>
+                <span>Aposta aberta deixa parte da liquidez travada.</span>
+              </button>
+              <button class="scenario-button" data-scenario="insufficient">
+                <strong>Pool insuficiente</strong>
+                <span>Aposta rejeitada porque available menor que payout.</span>
+              </button>
+            </div>
+
+            <div class="field-grid">
+              <label>
+                LP deposit
+                <input id="lpDeposit" type="number" min="1" step="1" value="1000" />
+              </label>
+              <label>
+                User bet
+                <input id="userBet" type="number" min="1" step="1" value="100" />
+              </label>
+              <label>
+                Fee rate %
+                <input id="feeRate" type="number" min="0" max="10" step="0.1" value="2" />
+              </label>
+              <label>
+                Payout multiplier
+                <input id="payoutMultiplier" type="number" min="1" max="10" step="0.1" value="1.8" />
+              </label>
+            </div>
+          </div>
+        </aside>
+
+        <section class="panel stage" id="stage">
+          <div class="panel-head">
+            <h2>Sequencia visual</h2>
+            <span class="pill" id="phase-label">Pronto</span>
+          </div>
+
+          <div class="stage-grid">
+            <article class="wallet">
+              <h3>LP wallet</h3>
+              <p>Deposita liquidez e recebe shares.</p>
+              <span class="balance" id="lp-wallet">-</span>
+            </article>
+
+            <article class="vault">
+              <h3>Pool vault</h3>
+              <p>Vault USDC controlado por PDA do liquidity-pool.</p>
+              <span class="balance" id="pool-vault">-</span>
+            </article>
+
+            <article class="wallet">
+              <h3>User wallet</h3>
+              <p>Envia stake e recebe payout se vencer.</p>
+              <span class="balance" id="user-wallet">-</span>
+            </article>
+
+            <article class="oracle">
+              <h3>Oracle odds</h3>
+              <p>Entrada vs expiração define UP/DOWN.</p>
+              <span class="balance" id="odds">65% -> 67%</span>
+            </article>
+
+            <article class="vault">
+              <h3>Locked liquidity</h3>
+              <p>Reserva para pagar apostas abertas.</p>
+              <span class="balance" id="locked-box">-</span>
+            </article>
+
+            <article class="wallet">
+              <h3>LP result</h3>
+              <p>Resultado economico do provedor.</p>
+              <span class="balance" id="lp-result">-</span>
+            </article>
+          </div>
+
+          <span class="token big lp">$</span>
+          <span class="token big bet">$</span>
+          <span class="token fee">%</span>
+          <span class="token big payout win">$</span>
+          <span class="token big payout lose">$</span>
+
+          <div class="timeline">
+            <div class="step" data-step="0">
+              <b>1. Deposit</b>
+              <span>LP envia USDC ao vault e recebe shares.</span>
+            </div>
+            <div class="step" data-step="1">
+              <b>2. Bet</b>
+              <span>User envia stake para o mesmo vault.</span>
+            </div>
+            <div class="step" data-step="2">
+              <b>3. Fee</b>
+              <span>2% separa LP fee e protocol fee.</span>
+            </div>
+            <div class="step" data-step="3">
+              <b>4. Lock</b>
+              <span>Payout possivel fica reservado.</span>
+            </div>
+            <div class="step" data-step="4">
+              <b>5. Settle</b>
+              <span>Odds de expiracao decide win/loss.</span>
+            </div>
+            <div class="step" data-step="5">
+              <b>6. Final</b>
+              <span>Ledger final e saque possivel.</span>
+            </div>
+          </div>
+
+          <div class="event-log" id="event-log" aria-live="polite"></div>
+        </section>
+
+        <aside class="panel">
+          <div class="panel-head">
+            <h2>Tokenomics</h2>
+            <span class="pill" id="health-pill">OK</span>
+          </div>
+          <div class="panel-body">
+            <div class="ledger-grid">
+              <div class="ledger-card">
+                <span>Vault balance</span>
+                <strong id="total-liquidity">-</strong>
+              </div>
+              <div class="ledger-card">
+                <span>Locked</span>
+                <strong id="locked">-</strong>
+              </div>
+              <div class="ledger-card">
+                <span>Available</span>
+                <strong id="available">-</strong>
+              </div>
+              <div class="ledger-card">
+                <span>LP equity</span>
+                <strong id="shares">-</strong>
+              </div>
+              <div class="ledger-card">
+                <span>LP fee</span>
+                <strong id="lp-fee">-</strong>
+              </div>
+              <div class="ledger-card">
+                <span>Protocol fee</span>
+                <strong id="protocol-fee">-</strong>
+              </div>
+              <div class="ledger-card">
+                <span>Effective bet</span>
+                <strong id="effective">-</strong>
+              </div>
+              <div class="ledger-card">
+                <span>Payout</span>
+                <strong id="payout">-</strong>
+              </div>
+            </div>
+
+            <div style="height: 14px"></div>
+
+            <div class="meter-stack">
+              <div class="metric">
+                <div class="metric-top">
+                  <span>Liquidez usada</span>
+                  <span id="liquidity-used-label">-</span>
+                </div>
+                <div class="bar"><div class="fill" id="liquidity-used"></div></div>
+              </div>
+              <div class="metric">
+                <div class="metric-top">
+                  <span>Locked / total</span>
+                  <span id="locked-ratio-label">-</span>
+                </div>
+                <div class="bar"><div class="fill locked" id="locked-ratio"></div></div>
+              </div>
+              <div class="metric">
+                <div class="metric-top">
+                  <span>LP PnL</span>
+                  <span id="lp-pnl-label">-</span>
+                </div>
+                <div class="bar"><div class="fill loss" id="lp-pnl"></div></div>
+              </div>
+            </div>
+
+            <div class="formula-panel" id="formula"></div>
+          </div>
+        </aside>
+      </section>
+
+      <section class="panel" style="margin-top: 16px">
+        <div class="panel-head">
+          <h2>Validacao automatica</h2>
+          <span class="pill">checks</span>
+        </div>
+        <div class="panel-body">
+          <div class="checks" id="checks"></div>
+          <div class="final">
+            <strong id="verdict-title">-</strong>
+            <p id="verdict-copy">-</p>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const scenarioData = {
+        win: {
+          label: "User ganha",
+          odds: "65% -> 67%",
+          settled: true,
+          won: true,
+          copy: "O pool paga o payout. A perda do pool e maior que a stake recebida, entao o LP tem PnL negativo neste trade, compensado apenas parcialmente pela fee.",
+        },
+        lose: {
+          label: "User perde",
+          odds: "65% -> 63%",
+          settled: true,
+          won: false,
+          copy: "O pool nao paga payout. A stake fica no vault, a liquidez cresce e o LP captura o resultado positivo.",
+        },
+        locked: {
+          label: "Withdraw bloqueado",
+          odds: "65% -> aberto",
+          settled: false,
+          won: false,
+          copy: "A aposta ainda esta aberta. O LP pode sacar somente available; o payout reservado continua travado.",
+        },
+        insufficient: {
+          label: "Pool insuficiente",
+          odds: "65% -> rejeitado",
+          settled: false,
+          won: false,
+          forceSmallPool: true,
+          copy: "A aposta nao deve ser criada quando available e menor que payout. Isso protege o vault de prometer mais do que pode pagar.",
+        },
+      };
+
+      const els = {
+        stage: document.getElementById("stage"),
+        play: document.getElementById("play"),
+        reset: document.getElementById("reset"),
+        phaseLabel: document.getElementById("phase-label"),
+        scenarioPill: document.getElementById("scenario-pill"),
+        healthPill: document.getElementById("health-pill"),
+        lpDeposit: document.getElementById("lpDeposit"),
+        userBet: document.getElementById("userBet"),
+        feeRate: document.getElementById("feeRate"),
+        payoutMultiplier: document.getElementById("payoutMultiplier"),
+        lpWallet: document.getElementById("lp-wallet"),
+        userWallet: document.getElementById("user-wallet"),
+        poolVault: document.getElementById("pool-vault"),
+        odds: document.getElementById("odds"),
+        lockedBox: document.getElementById("locked-box"),
+        lpResult: document.getElementById("lp-result"),
+        totalLiquidity: document.getElementById("total-liquidity"),
+        locked: document.getElementById("locked"),
+        available: document.getElementById("available"),
+        shares: document.getElementById("shares"),
+        lpFee: document.getElementById("lp-fee"),
+        protocolFee: document.getElementById("protocol-fee"),
+        effective: document.getElementById("effective"),
+        payout: document.getElementById("payout"),
+        liquidityUsed: document.getElementById("liquidity-used"),
+        liquidityUsedLabel: document.getElementById("liquidity-used-label"),
+        lockedRatio: document.getElementById("locked-ratio"),
+        lockedRatioLabel: document.getElementById("locked-ratio-label"),
+        lpPnl: document.getElementById("lp-pnl"),
+        lpPnlLabel: document.getElementById("lp-pnl-label"),
+        formula: document.getElementById("formula"),
+        eventLog: document.getElementById("event-log"),
+        checks: document.getElementById("checks"),
+        verdictTitle: document.getElementById("verdict-title"),
+        verdictCopy: document.getElementById("verdict-copy"),
+      };
+
+      let scenario = "win";
+      let timers = [];
+
+      function money(value) {
+        return `${Number(value).toLocaleString("pt-BR", {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        })} USDC`;
+      }
+
+      function pct(value) {
+        return `${Number(value).toLocaleString("pt-BR", {
+          minimumFractionDigits: 1,
+          maximumFractionDigits: 1,
+        })}%`;
+      }
+
+      function inputs() {
+        const selected = scenarioData[scenario];
+        const rawDeposit = Number(els.lpDeposit.value || 0);
+        const lpDeposit = selected.forceSmallPool ? Math.min(rawDeposit, 120) : rawDeposit;
+        const userBet = Number(els.userBet.value || 0);
+        const feeRatePct = Number(els.feeRate.value || 0);
+        const payoutMultiplier = Number(els.payoutMultiplier.value || 0);
+        return { lpDeposit, userBet, feeRatePct, payoutMultiplier, selected };
+      }
+
+      function compute() {
+        const { lpDeposit, userBet, feeRatePct, payoutMultiplier, selected } = inputs();
+        const fee = userBet * feeRatePct / 100;
+        const protocolFee = fee * 0.25;
+        const lpFee = fee - protocolFee;
+        const effective = userBet - fee;
+        const payout = effective * payoutMultiplier;
+        const canAccept = lpDeposit >= payout;
+        const accepted = scenario !== "insufficient" && canAccept;
+
+        const totalAfterDeposit = lpDeposit;
+        const totalAfterBet = accepted ? totalAfterDeposit + userBet : totalAfterDeposit;
+        const lockedAfterBet = accepted ? payout : 0;
+        const totalAfterSettle = !accepted
+          ? totalAfterDeposit
+          : selected.settled && selected.won
+            ? totalAfterBet - payout
+            : totalAfterBet;
+        const lockedFinal = accepted && !selected.settled ? lockedAfterBet : 0;
+        const availableFinal = totalAfterSettle - lockedFinal;
+        const withdrawBlocked = accepted && !selected.settled && lockedAfterBet > 0;
+        const protocolReserve = accepted ? protocolFee : 0;
+        const lpEquity = totalAfterSettle - protocolReserve;
+        const lpPnl = lpEquity - lpDeposit;
+        const shares = lpDeposit;
+        const lockedRatio = totalAfterBet > 0 ? lockedAfterBet / totalAfterBet * 100 : 0;
+        const liquidityUsed = lpDeposit > 0 ? payout / lpDeposit * 100 : 0;
+
+        return {
+          lpDeposit,
+          userBet,
+          feeRatePct,
+          payoutMultiplier,
+          fee,
+          protocolFee,
+          protocolReserve,
+          lpFee,
+          lpEquity,
+          effective,
+          payout,
+          canAccept,
+          accepted,
+          totalAfterDeposit,
+          totalAfterBet,
+          totalAfterSettle,
+          lockedAfterBet,
+          lockedFinal,
+          availableFinal,
+          withdrawBlocked,
+          lpPnl,
+          shares,
+          lockedRatio,
+          liquidityUsed,
+          selected,
+        };
+      }
+
+      function setText(id, value) {
+        id.textContent = value;
+      }
+
+      function render() {
+        const s = compute();
+        els.stage.dataset.outcome = s.accepted && s.selected.settled && s.selected.won
+          ? "win"
+          : s.accepted
+            ? "lose"
+            : "none";
+        const poolDisplay = scenario === "locked" ? s.totalAfterBet : s.totalAfterSettle;
+        const lockedDisplay = scenario === "locked" ? s.lockedAfterBet : s.lockedFinal;
+        const availableDisplay = poolDisplay - lockedDisplay;
+        const pnlPct = s.lpDeposit > 0 ? Math.abs(s.lpPnl) / s.lpDeposit * 100 : 0;
+
+        setText(els.scenarioPill, s.selected.label);
+        setText(els.odds, s.selected.odds);
+        setText(els.lpWallet, `-${money(s.lpDeposit)}`);
+        setText(els.userWallet, s.accepted && s.selected.settled && s.selected.won ? `+${money(s.payout - s.userBet)}` : s.accepted ? `-${money(s.userBet)}` : "0,00 USDC");
+        setText(els.poolVault, money(poolDisplay));
+        setText(els.lockedBox, money(lockedDisplay));
+        setText(els.lpResult, `${s.lpPnl >= 0 ? "+" : ""}${money(s.lpPnl)}`);
+
+        setText(els.totalLiquidity, money(poolDisplay));
+        setText(els.locked, money(lockedDisplay));
+        setText(els.available, money(availableDisplay));
+        setText(els.shares, money(poolDisplay - s.protocolReserve));
+        setText(els.lpFee, money(s.lpFee));
+        setText(els.protocolFee, money(s.protocolFee));
+        setText(els.effective, money(s.effective));
+        setText(els.payout, money(s.payout));
+
+        els.liquidityUsed.style.width = `${Math.min(s.liquidityUsed, 100)}%`;
+        setText(els.liquidityUsedLabel, pct(s.liquidityUsed));
+        els.lockedRatio.style.width = `${Math.min(s.lockedRatio, 100)}%`;
+        setText(els.lockedRatioLabel, pct(s.lockedRatio));
+        els.lpPnl.style.width = `${Math.min(pnlPct, 100)}%`;
+        els.lpPnl.className = `fill ${s.lpPnl >= 0 ? "" : "loss"}`;
+        setText(els.lpPnlLabel, `${s.lpPnl >= 0 ? "+" : "-"}${pct(pnlPct)}`);
+
+        setText(els.healthPill, s.accepted || scenario === "insufficient" ? "OK" : "Risco");
+        els.formula.textContent =
+`fee = bet * fee_rate
+fee = ${s.userBet} * ${s.feeRatePct}% = ${s.fee.toFixed(2)}
+
+protocol_fee = fee * 25% = ${s.protocolFee.toFixed(2)}
+lp_fee = fee - protocol_fee = ${s.lpFee.toFixed(2)}
+
+effective = bet - fee = ${s.effective.toFixed(2)}
+payout = effective * ${s.payoutMultiplier} = ${s.payout.toFixed(2)}
+
+available = total_liquidity - locked_liquidity
+lp_equity = vault_balance - protocol_reserve
+lp_equity = ${poolDisplay.toFixed(2)} - ${s.protocolReserve.toFixed(2)}
+
+available_final = ${availableDisplay.toFixed(2)}`;
+
+        renderChecks(s, poolDisplay, lockedDisplay, availableDisplay);
+      }
+
+      function renderChecks(s, poolDisplay, lockedDisplay, availableDisplay) {
+        const checks = [
+          {
+            ok: Math.abs((s.protocolFee + s.lpFee) - s.fee) < 0.00001,
+            label: "Fee split fecha",
+            code: `${s.protocolFee.toFixed(2)} + ${s.lpFee.toFixed(2)} = ${s.fee.toFixed(2)}`,
+          },
+          {
+            ok: Math.abs((s.effective + s.fee) - s.userBet) < 0.00001,
+            label: "Stake separa fee e valor efetivo",
+            code: `${s.effective.toFixed(2)} + ${s.fee.toFixed(2)} = ${s.userBet.toFixed(2)}`,
+          },
+          {
+            ok: scenario === "insufficient" ? !s.accepted : s.accepted,
+            label: scenario === "insufficient" ? "Pool rejeita aposta sem liquidez" : "Pool aceita aposta com liquidez",
+            code: `available ${s.lpDeposit.toFixed(2)} ${s.lpDeposit >= s.payout ? ">=" : "<"} payout ${s.payout.toFixed(2)}`,
+          },
+          {
+            ok: availableDisplay >= -0.00001,
+            label: "Available nunca fica negativo",
+            code: `${poolDisplay.toFixed(2)} - ${lockedDisplay.toFixed(2)} = ${availableDisplay.toFixed(2)}`,
+          },
+          {
+            ok: Math.abs((poolDisplay - s.protocolReserve) - (poolDisplay - s.protocolFee)) < 0.00001 || !s.accepted,
+            label: "LP equity exclui reserva do protocolo",
+            code: `${poolDisplay.toFixed(2)} - ${s.protocolReserve.toFixed(2)} = ${(poolDisplay - s.protocolReserve).toFixed(2)}`,
+          },
+          {
+            ok: scenario !== "locked" || s.withdrawBlocked,
+            label: "Withdraw respeita locked liquidity",
+            code: scenario === "locked" ? `locked ${s.lockedAfterBet.toFixed(2)} bloqueia saque total` : "sem bet aberta",
+          },
+        ];
+
+        els.checks.innerHTML = checks.map((item) => `
+          <div class="check ${item.ok ? "" : "fail"}">
+            <span class="ok" aria-hidden="true"></span>
+            <strong>${item.label}</strong>
+            <code>${item.code}</code>
+          </div>
+        `).join("");
+
+        const allOk = checks.every((item) => item.ok);
+        setText(els.verdictTitle, allOk ? "Tokenomics consistente para este cenario" : "Tokenomics inconsistente");
+        setText(els.verdictCopy, allOk ? s.selected.copy : "Ajuste os parametros ou rejeite a transacao antes de criar estado on-chain.");
+      }
+
+      function setActiveStep(index) {
+        document.querySelectorAll(".step").forEach((step) => {
+          step.classList.toggle("active", Number(step.dataset.step) === index);
+        });
+      }
+
+      function logLine(text) {
+        const line = document.createElement("div");
+        line.textContent = text;
+        els.eventLog.prepend(line);
+      }
+
+      function clearTimers() {
+        timers.forEach((timer) => window.clearTimeout(timer));
+        timers = [];
+      }
+
+      function resetAnimation() {
+        clearTimers();
+        els.stage.classList.remove("running");
+        setActiveStep(-1);
+        setText(els.phaseLabel, "Pronto");
+        els.eventLog.innerHTML = "";
+        void els.stage.offsetWidth;
+      }
+
+      function play() {
+        resetAnimation();
+        render();
+        const s = compute();
+        els.stage.classList.add("running");
+
+        const lines = [
+          ["Deposit", `LP deposita ${money(s.lpDeposit)} e recebe ${s.shares.toLocaleString("pt-BR")} shares.`],
+          ["Bet", s.accepted ? `User aposta ${money(s.userBet)} no pool vault.` : "Aposta tentada, mas ainda precisa passar no check de liquidez."],
+          ["Fee", s.accepted ? `Fee ${money(s.fee)}: LP ${money(s.lpFee)}, protocolo ${money(s.protocolFee)}.` : "Sem fee porque a aposta foi rejeitada."],
+          ["Lock", s.accepted ? `Pool trava ${money(s.payout)} para payout possivel.` : `Rejeitado: payout ${money(s.payout)} maior que available ${money(s.lpDeposit)}.`],
+          ["Settle", s.accepted ? (s.selected.settled ? (s.selected.won ? "User ganha. Pool paga payout." : "User perde. Stake fica no pool.") : "Aposta aberta. Settlement ainda nao rodou.") : "Nenhuma Bet PDA deve ser criada."],
+          ["Final", `Available final: ${money(scenario === "locked" ? s.totalAfterBet - s.lockedAfterBet : s.availableFinal)}.`],
+        ];
+
+        lines.forEach(([phase, line], index) => {
+          timers.push(window.setTimeout(() => {
+            setActiveStep(index);
+            setText(els.phaseLabel, phase);
+            logLine(line);
+          }, index * 900));
+        });
+
+        timers.push(window.setTimeout(() => {
+          els.stage.classList.remove("running");
+          setText(els.phaseLabel, "Completo");
+        }, 6100));
+      }
+
+      document.querySelectorAll(".scenario-button").forEach((button) => {
+        button.addEventListener("click", () => {
+          scenario = button.dataset.scenario;
+          document.querySelectorAll(".scenario-button").forEach((item) => {
+            item.classList.toggle("active", item === button);
+          });
+          resetAnimation();
+          render();
+        });
+      });
+
+      [els.lpDeposit, els.userBet, els.feeRate, els.payoutMultiplier].forEach((input) => {
+        input.addEventListener("input", () => {
+          resetAnimation();
+          render();
+        });
+      });
+
+      els.play.addEventListener("click", play);
+      els.reset.addEventListener("click", () => {
+        scenario = "win";
+        els.lpDeposit.value = 1000;
+        els.userBet.value = 100;
+        els.feeRate.value = 2;
+        els.payoutMultiplier.value = 1.8;
+        document.querySelectorAll(".scenario-button").forEach((item) => {
+          item.classList.toggle("active", item.dataset.scenario === "win");
+        });
+        resetAnimation();
+        render();
+      });
+
+      render();
+    </script>
+  </body>
+</html>

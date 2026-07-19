@@ -7,8 +7,12 @@ import {
   TransactionInstruction,
 } from "@solana/web3.js";
 
-export const ORACLE_PROGRAM_ID = new PublicKey("6BVWCCQDjQDcjQYhmbzJ9DFWY9LyDojM3mYoWivrASaG");
-export const BETTING_PROGRAM_ID = new PublicKey("GoccKzkMS5BWRmrbLdGKzqKUUcksZB3DftW82F7boCoQ");
+export const ORACLE_PROGRAM_ID = new PublicKey(
+  process.env.ORACLE_PROGRAM_ID ?? "6BVWCCQDjQDcjQYhmbzJ9DFWY9LyDojM3mYoWivrASaG",
+);
+export const BETTING_PROGRAM_ID = new PublicKey(
+  process.env.BETTING_PROGRAM_ID ?? "GoccKzkMS5BWRmrbLdGKzqKUUcksZB3DftW82F7boCoQ",
+);
 export const TOKEN_PROGRAM_ID = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
 export const ASSOCIATED_TOKEN_PROGRAM_ID = new PublicKey("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
 export const BET_ACCOUNT_SIZE = 157;

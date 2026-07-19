@@ -5,6 +5,7 @@ export function createSettlementWorker({ store, fetchOpenBets, settleBet, now = 
     store.setSettlementRunning(true);
     let checked = 0;
     let settled = 0;
+    let failed = 0;
 
     logger.info("settlement.run.start");
     try {
@@ -31,25 +32,36 @@ export function createSettlementWorker({ store, fetchOpenBets, settleBet, now = 
           continue;
         }
 
-        logger.info("settlement.bet.settle", {
-          matchId: bet.matchId,
-          user: bet.user,
-          nonce: bet.nonce,
-          oddsAtExpiryHome: match.odds.home,
-        });
-        const signature = await settleBet(bet, match.odds.home);
-        settled += 1;
-        store.recordTx({
-          type: "settle_bet",
-          matchId: bet.matchId,
-          user: bet.user,
-          nonce: bet.nonce,
-          signature,
-        });
-        logger.info("settlement.bet.settled", { matchId: bet.matchId, user: bet.user, nonce: bet.nonce, signature });
+        try {
+          logger.info("settlement.bet.settle", {
+            matchId: bet.matchId,
+            user: bet.user,
+            nonce: bet.nonce,
+            oddsAtExpiryHome: match.odds.home,
+          });
+          const signature = await settleBet(bet, match.odds.home);
+          settled += 1;
+          store.recordTx({
+            type: "settle_bet",
+            matchId: bet.matchId,
+            user: bet.user,
+            nonce: bet.nonce,
+            signature,
+          });
+          logger.info("settlement.bet.settled", { matchId: bet.matchId, user: bet.user, nonce: bet.nonce, signature });
+        } catch (error) {
+          failed += 1;
+          store.recordError(error);
+          logger.error("settlement.bet.error", {
+            matchId: bet.matchId,
+            user: bet.user,
+            nonce: bet.nonce,
+            message: error instanceof Error ? error.message : String(error),
+          });
+        }
       }
-      logger.info("settlement.run.done", { checked, settled });
-      return { checked, settled };
+      logger.info("settlement.run.done", { checked, settled, failed });
+      return { checked, settled, failed };
     } catch (error) {
       store.recordError(error);
       logger.error("settlement.run.error", { message: error instanceof Error ? error.message : String(error) });

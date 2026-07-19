@@ -7,8 +7,8 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-oracle_adapter = "6BVWCCQDjQDcjQYhmbzJ9DFWY9LyDojM3mYoWivrASaG"
-betting_engine = "GoccKzkMS5BWRmrbLdGKzqKUUcksZB3DftW82F7boCoQ"
+betting_engine = "FBXnZZHR3ndsE2oYak4EQaFTPZsEC7d34C8tQfE7hkm4"
+oracle_adapter = "BfWcrr3Mv4StpqSyaMUZtsLLUTM9cLkNeaARRdwSFSCN"
 
 [provider]
 cluster = "localnet"

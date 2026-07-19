@@ -1,10 +1,11 @@
 {
-  "name": "futodds-oracle-demo",
+  "name": "futodds-backoffice",
   "private": true,
   "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
+    "dev:local": "vite --host 127.0.0.1 --port 5173",
     "build": "tsc && vite build",
     "test": "vitest run"
   },
