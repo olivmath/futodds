@@ -200,6 +200,7 @@ export function decodeMatchAccount(data) {
   const legacyOddsSource = buffer.readUInt8(offset);
   offset += 1;
   const bump = buffer.readUInt8(offset);
+  const fixtureId = matchId.match(/^\d+/)?.[0];
 
   return {
     authority,
@@ -209,6 +210,7 @@ export function decodeMatchAccount(data) {
     updatedAt: updatedAt.toString(),
     status,
     oddsSource: legacyOddsSource === 1 ? "txline-polling" : "random",
+    fixtureId,
     bump,
   };
 }

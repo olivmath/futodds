@@ -69,6 +69,16 @@ test("decodeMatchAccount reads the on-chain MatchAccount layout with status", ()
   assert.equal(match.updatedAt, "1700000000");
   assert.equal(match.status, 0);
   assert.equal(match.oddsSource, "txline-polling");
+  assert.equal(match.fixtureId, undefined);
+});
+
+test("decodeMatchAccount restores a TxLINE fixture ID from a versioned match ID", () => {
+  const match = decodeMatchAccount(buildMatchAccountData({
+    matchId: "18257739-v2",
+    status: 0,
+  }));
+
+  assert.equal(match.fixtureId, "18257739");
 });
 
 test("buildUpdateOddsInstruction encodes the legacy on-chain odds source", () => {

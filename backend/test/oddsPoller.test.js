@@ -84,3 +84,36 @@ test("odds poller skips matches without latestOdds", async () => {
 
   assert.deepEqual(sent, []);
 });
+
+test("odds poller fetches TxLINE odds using the persisted fixture ID", async () => {
+  const sent = [];
+  const store = createStore();
+  store.replaceMatches([{
+    id: "18257739-v2",
+    fixtureId: "18257739",
+    odds: { home: 3334, away: 3333, draw: 3333 },
+    oddsSource: "txline-polling",
+  }]);
+
+  const poller = createOddsPoller({
+    store,
+    logger: { info() {}, error() {} },
+    syncMatches: async () => store.listMatches(),
+    fetchTxlineOdds: async (fixtureId) => {
+      assert.equal(fixtureId, "18257739");
+      return { home: 4200, away: 3300, draw: 2500 };
+    },
+    sendUpdateOdds: async (matchId, odds, oddsSource) => {
+      sent.push({ matchId, odds, oddsSource });
+      return "sig_txline";
+    },
+  });
+
+  await poller.runOnce();
+
+  assert.deepEqual(sent, [{
+    matchId: "18257739-v2",
+    odds: { home: 4200, away: 3300, draw: 2500 },
+    oddsSource: "txline-polling",
+  }]);
+});

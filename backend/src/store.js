@@ -52,7 +52,7 @@ export function createStore() {
         ...match,
         odds: { ...match.odds },
         oddsSource: state.matchSources.get(match.id) ?? match.oddsSource ?? currentById.get(match.id)?.oddsSource ?? "random",
-        fixtureId: state.matchFixtures.get(match.id),
+        fixtureId: state.matchFixtures.get(match.id) ?? match.fixtureId ?? currentById.get(match.id)?.fixtureId,
         streamStatus: state.matchStreamStatus.get(match.id) ?? "inactive",
       }));
     },
@@ -91,7 +91,8 @@ export function createStore() {
       return odds ? { ...odds } : null;
     },
     getFixtureId(matchId) {
-      return state.matchFixtures.get(matchId);
+      return state.matchFixtures.get(matchId)
+        ?? state.matches.find((item) => item.id === matchId)?.fixtureId;
     },
     setPollerRunning(running) {
       state.poller.running = running;

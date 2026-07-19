@@ -3,6 +3,7 @@ import { logger as defaultLogger } from "./logger.js";
 export function createOddsPoller({
   store,
   sendUpdateOdds,
+  fetchTxlineOdds = async () => null,
   syncMatches = async () => store.listMatches(),
   intervalMs = 60_000,
   logger = defaultLogger,
@@ -19,14 +20,20 @@ export function createOddsPoller({
       for (const match of matches) {
         if (match.oddsSource === "txline-realtime") continue;
 
-        let odds = store.getLatestOdds(match.id);
-        if (match.oddsSource === "random") {
-          odds = generateRandomOdds(match.odds);
-          store.setLatestOdds(match.id, odds);
-        }
-        if (!odds) continue;
-
         try {
+          let odds = store.getLatestOdds(match.id);
+          if (match.oddsSource === "txline-polling") {
+            const latest = await fetchTxlineOdds(match.fixtureId ?? match.id);
+            if (latest) {
+              odds = latest;
+              store.setLatestOdds(match.id, latest);
+            }
+          } else if (match.oddsSource === "random") {
+            odds = generateRandomOdds(match.odds);
+            store.setLatestOdds(match.id, odds);
+          }
+          if (!odds) continue;
+
           const signature = await sendUpdateOdds(match.id, odds, match.oddsSource);
           store.updateMatchOdds(match.id, odds);
           store.recordTx({ type: "update_odds", matchId: match.id, signature });

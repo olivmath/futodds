@@ -20,6 +20,7 @@ import { logger as defaultLogger } from "./logger.js";
 import { createTxlineClient } from "./txlineClient.js";
 import { loadLeagues } from "./leagues.js";
 import { createTxlineStream } from "./txlineStream.js";
+import { selectTxlineOdds } from "./txlineOdds.js";
 
 export function createApp({
   store,
@@ -90,6 +91,7 @@ export function createApp({
   app.post("/matches", async (req, res, next) => {
     try {
       const matchId = req.body?.matchId;
+      const fixtureId = String(req.body?.fixtureId ?? matchId ?? "");
       const tag = req.body?.tag ?? "";
       const oddsSource = req.body?.oddsSource ?? "txline-polling";
       const validSources = ["random", "txline-polling", "txline-realtime"];
@@ -112,17 +114,26 @@ export function createApp({
         }
         const fixtures = await txlineClient.fetchFixturesSnapshot({});
         const validIds = new Set(fixtures.map((f) => String(f.FixtureId)));
-        if (!validIds.has(matchId)) {
-          res.status(400).json({ error: `FixtureId ${matchId} not found in TxLINE. Available: ${[...validIds].join(", ")}` });
+        if (!validIds.has(fixtureId)) {
+          res.status(400).json({ error: `FixtureId ${fixtureId} not found in TxLINE. Available: ${[...validIds].join(", ")}` });
           return;
         }
       }
-      const odds = req.body?.odds ?? { home: 3334, away: 3333, draw: 3333 };
+      let odds = req.body?.odds;
+      if (!odds && oddsSource.startsWith("txline")) {
+        odds = selectTxlineOdds(await txlineClient.fetchOddsSnapshot(fixtureId));
+        if (!odds) {
+          res.status(502).json({ error: `No usable 1X2 odds for TxLINE fixture ${fixtureId}` });
+          return;
+        }
+      }
+      odds ??= { home: 3334, away: 3333, draw: 3333 };
       const signature = await createMatch(matchId, odds, tag, oddsSource);
       store.setMatchOddsSource(matchId, oddsSource);
+      store.setMatchFixture(matchId, fixtureId);
       store.recordTx({ type: "create_match", matchId, signature });
-      logger.info("admin.match.create", { matchId, tag, oddsSource, signature });
-      res.json({ matchId, tag, oddsSource, signature });
+      logger.info("admin.match.create", { matchId, fixtureId, tag, oddsSource, signature });
+      res.json({ matchId, fixtureId, tag, oddsSource, signature });
     } catch (error) {
       next(error);
     }
@@ -369,6 +380,8 @@ export function createRuntime(env = process.env) {
     intervalMs: config.solana.pollIntervalMs,
     logger: defaultLogger,
     syncMatches,
+    fetchTxlineOdds: async (fixtureId) =>
+      selectTxlineOdds(await txlineClient.fetchOddsSnapshot(fixtureId)),
     sendUpdateOdds: (matchId, odds, oddsSource) =>
       sendUpdateOdds(connection, authority, matchId, odds, "", oddsSource),
   });
