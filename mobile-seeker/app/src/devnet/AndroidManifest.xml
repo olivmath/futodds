@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Devnet only: the local backend is plain http (localhost via adb reverse,
+     or a LAN IP). Mainnet builds keep cleartext disabled. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:usesCleartextTraffic="true" />
+</manifest>

@@ -10,6 +10,8 @@ import {
   createConnection,
   fetchOpenMatches,
   fetchOpenBets,
+  fetchPoolState,
+  pendingFees,
   sendSettleBet,
   sendSetMatchStatus,
   sendUpdateOdds,
@@ -27,6 +29,8 @@ export function createApp({
   txlineStream = null,
   createMatch = null,
   closeMatch = null,
+  fetchPoolState = null,
+  poolsMeta = null,
   logger = defaultLogger,
   healthCheck = async () => ({ ok: true }),
 }) {
@@ -118,6 +122,57 @@ export function createApp({
       store.recordTx({ type: "create_match", matchId, signature });
       logger.info("admin.match.create", { matchId, tag, oddsSource, signature });
       res.json({ matchId, tag, oddsSource, signature });
+    } catch (error) {
+      next(error);
+    }
+  });
+  app.get("/pools", async (_req, res, next) => {
+    try {
+      if (!fetchPoolState) {
+        res.status(503).json({ error: "pool reads not available" });
+        return;
+      }
+      const { pools } = await fetchPoolState();
+      const matches = new Map(store.listMatches().map((m) => [m.id, m]));
+      res.json({
+        ...(poolsMeta ?? {}),
+        pools: pools.map((pool) => {
+          const match = matches.get(pool.matchId);
+          return {
+            ...pool,
+            tag: match?.tag ?? "",
+            odds: match?.odds ?? null,
+            status: !match ? "settled" : match.streamStatus === "active" ? "live" : "open",
+          };
+        }),
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+  app.get("/pools/positions/:owner", async (req, res, next) => {
+    try {
+      if (!fetchPoolState) {
+        res.status(503).json({ error: "pool reads not available" });
+        return;
+      }
+      const owner = req.params.owner;
+      const { pools, positions } = await fetchPoolState();
+      const poolsByPubkey = new Map(pools.map((pool) => [pool.pubkey, pool]));
+      res.json(
+        positions
+          .filter((position) => position.owner === owner)
+          .map((position) => {
+            const pool = poolsByPubkey.get(position.pool);
+            return {
+              pool: position.pool,
+              matchId: pool?.matchId ?? null,
+              shares: position.shares,
+              depositedAt: position.depositedAt,
+              pendingFees: pool ? pendingFees(pool, position) : "0",
+            };
+          }),
+      );
     } catch (error) {
       next(error);
     }
@@ -331,8 +386,26 @@ export function createRuntime(env = process.env) {
 
   const createMatch = (matchId, odds, tag = "", oddsSource = 0) => sendUpdateOdds(connection, authority, matchId, odds, tag, oddsSource);
   const closeMatch = (matchId) => sendSetMatchStatus(connection, authority, matchId, 1);
+  const poolsMeta = {
+    programId: BETTING_PROGRAM_ID.toBase58(),
+    rpcUrl: config.solana.rpcUrl,
+    mint: config.solana.mint.toBase58(),
+  };
 
-  return { config, store, poller, settlementWorker, txlineClient, txlineStream, createMatch, closeMatch, healthCheck, initialize };
+  return {
+    config,
+    store,
+    poller,
+    settlementWorker,
+    txlineClient,
+    txlineStream,
+    createMatch,
+    closeMatch,
+    fetchPoolState: () => fetchPoolState(connection),
+    poolsMeta,
+    healthCheck,
+    initialize,
+  };
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

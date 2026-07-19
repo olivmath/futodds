@@ -278,3 +278,102 @@ test("backend API rejects invalid per-match odds source metadata", async () => {
     await new Promise((resolve) => server.close(resolve));
   }
 });
+
+test("GET /pools merges chain pools with store match info", async () => {
+  const store = createStore();
+  store.replaceMatches([
+    { id: "match_1", tag: "BRA x ARG", odds: { home: 5000, away: 3000, draw: 2000 }, status: 0 },
+  ]);
+  store.setStreamStatus("match_1", "active");
+
+  const server = createServer(
+    createApp({
+      store,
+      poller: { start() {}, stop() {} },
+      settlementWorker: { runOnce: async () => ({ checked: 0, settled: 0 }) },
+      poolsMeta: { programId: "prog", rpcUrl: "http://rpc", mint: "mint" },
+      fetchPoolState: async () => ({
+        pools: [
+          { pubkey: "poolA", matchId: "match_1", totalLiquidity: "1000000", feesPerShare: "0" },
+          { pubkey: "poolB", matchId: "match_2", totalLiquidity: "2000000", feesPerShare: "0" },
+        ],
+        positions: [],
+      }),
+      logger: silentLogger,
+    }),
+  );
+
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address();
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/pools`);
+    const body = await response.json();
+
+    assert.equal(body.programId, "prog");
+    assert.equal(body.mint, "mint");
+    assert.equal(body.pools.length, 2);
+    const [live, settled] = body.pools;
+    assert.equal(live.status, "live");
+    assert.equal(live.tag, "BRA x ARG");
+    assert.deepEqual(live.odds, { home: 5000, away: 3000, draw: 2000 });
+    assert.equal(settled.status, "settled");
+    assert.equal(settled.tag, "");
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("GET /pools/positions/:owner returns owner positions with pending fees", async () => {
+  const server = createServer(
+    createApp({
+      store: createStore(),
+      poller: { start() {}, stop() {} },
+      settlementWorker: { runOnce: async () => ({ checked: 0, settled: 0 }) },
+      fetchPoolState: async () => ({
+        pools: [{ pubkey: "poolA", matchId: "match_1", feesPerShare: (3n * 10n ** 12n).toString() }],
+        positions: [
+          { pubkey: "posA", owner: "ownerA", pool: "poolA", shares: "2000000", depositedAt: 1700000000, feesClaimedPerShare: (1n * 10n ** 12n).toString() },
+          { pubkey: "posB", owner: "ownerB", pool: "poolA", shares: "9000000", depositedAt: 1700000000, feesClaimedPerShare: "0" },
+        ],
+      }),
+      logger: silentLogger,
+    }),
+  );
+
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address();
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/pools/positions/ownerA`);
+    const body = await response.json();
+
+    assert.equal(body.length, 1);
+    assert.equal(body[0].matchId, "match_1");
+    assert.equal(body[0].shares, "2000000");
+    assert.equal(body[0].pendingFees, "4000000");
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("GET /pools responds 503 when pool reads are unavailable", async () => {
+  const server = createServer(
+    createApp({
+      store: createStore(),
+      poller: { start() {}, stop() {} },
+      settlementWorker: { runOnce: async () => ({ checked: 0, settled: 0 }) },
+      logger: silentLogger,
+    }),
+  );
+
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address();
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/pools`);
+    assert.equal(response.status, 503);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});

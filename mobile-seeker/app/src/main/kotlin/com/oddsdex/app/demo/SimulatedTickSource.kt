@@ -51,7 +51,7 @@ class SimulatedTickSource(
     private var steerTarget: Double? = null
 
     @Volatile
-    var currentOdd: Double = baseOdd
+    override var currentOdd: Double = baseOdd
         private set
 
     fun steerTo(target: Double) {

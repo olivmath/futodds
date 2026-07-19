@@ -8,5 +8,8 @@ import kotlinx.coroutines.flow.Flow
  * screen) is source-agnostic.
  */
 interface TickSource {
+    /** Latest emitted odd — readable off-stream (entry/exit snapshots). */
+    val currentOdd: Double
+
     fun ticks(): Flow<OddsTick>
 }

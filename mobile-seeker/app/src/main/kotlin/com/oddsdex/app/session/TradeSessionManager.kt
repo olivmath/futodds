@@ -2,7 +2,7 @@ package com.oddsdex.app.session
 
 import android.content.Context
 import android.content.Intent
-import com.oddsdex.app.demo.SimulatedTickSource
+import com.oddsdex.app.domain.TickSource
 import com.oddsdex.app.ui.home.HomeUiState
 import com.oddsdex.app.ui.home.TradeResult
 import com.oddsdex.app.ui.onboarding.Direction
@@ -57,7 +57,7 @@ class TradeSessionManager @Inject constructor(
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
-    private var source: SimulatedTickSource? = null
+    private var source: TickSource? = null
     private var countdownJob: Job? = null
 
     private val _live = MutableStateFlow<LiveTrade?>(null)
@@ -71,7 +71,7 @@ class TradeSessionManager @Inject constructor(
     var appVisible: Boolean = false
 
     fun open(
-        source: SimulatedTickSource,
+        source: TickSource,
         matchTitle: String,
         team: String,
         direction: Direction,

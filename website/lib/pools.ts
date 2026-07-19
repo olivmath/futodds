@@ -1,152 +1,166 @@
 /**
- * Mock data layer for the investor panel.
+ * Data layer for the investor panel.
  *
- * Shapes mirror the on-chain schemas of the `liquidity-pool` program
- * (docs/fase-2a-pool-deposit.md) so swapping mocks for real reads is a
- * drop-in change:
+ * Reads come from the backend (`GET /pools`, `GET /pools/positions/:owner`),
+ * which decodes the on-chain accounts of the betting-engine program:
  *
- *   Pool       { match_id, total_liquidity, locked_liquidity, fee_rate, total_shares }
- *   LpPosition { pool, shares, deposited_at }
+ *   Pool       { match_id, total_liquidity, locked_liquidity, fee_rate,
+ *                protocol_fees_accumulated, lp_fees_accumulated, total_shares }
+ *   LpPosition { pool, shares, deposited_at, pending fees }
  *
- * Amounts are in USDC (display units, 2dp). fee_rate is in bps (200 = 2.00%).
- * Share math is the program's: first deposit 1:1, then
- * shares = amount * total_shares / total_liquidity.
+ * Amounts are u64 base units of the pool mint (USDC, 6 decimals) and are
+ * kept as bigint so share math mirrors the program exactly.
  */
 
 export type PoolStatus = "live" | "open" | "settled";
 
 export type Pool = {
+  pubkey: string;
   matchId: string;
-  home: string;
-  away: string;
-  kickoff: string; // display only
+  tag: string;
   status: PoolStatus;
-  totalLiquidity: number;
-  lockedLiquidity: number;
+  mint: string;
+  vault: string;
+  totalLiquidity: bigint;
+  lockedLiquidity: bigint;
+  totalShares: bigint;
   feeRateBps: number; // 200 = 2.00%
-  totalShares: number;
-  exposureUp: number; // USDC backing UP bets
-  exposureDown: number; // USDC backing DOWN bets
-  feesAccruedLp: number; // lifetime LP fees, USDC
+  protocolFeesAccumulated: bigint;
+  lpFeesAccumulated: bigint;
 };
 
 export type LpPosition = {
-  matchId: string;
-  shares: number;
-  depositedUsdc: number; // cost basis, for PnL display
-  claimableFees: number;
+  pool: string;
+  matchId: string | null;
+  shares: bigint;
+  depositedAt: number;
+  pendingFees: bigint;
 };
 
-export const MOCK_POOLS: Pool[] = [
-  {
-    matchId: "wc26-bra-arg",
-    home: "BRA",
-    away: "ARG",
-    kickoff: "Live · 63'",
-    status: "live",
-    totalLiquidity: 182_450.0,
-    lockedLiquidity: 121_300.0,
-    feeRateBps: 200,
-    totalShares: 175_000.0,
-    exposureUp: 74_800.0,
-    exposureDown: 46_500.0,
-    feesAccruedLp: 2_184.5,
-  },
-  {
-    matchId: "wc26-fra-eng",
-    home: "FRA",
-    away: "ENG",
-    kickoff: "Live · 12'",
-    status: "live",
-    totalLiquidity: 96_200.0,
-    lockedLiquidity: 31_750.0,
-    feeRateBps: 200,
-    totalShares: 96_200.0,
-    exposureUp: 12_400.0,
-    exposureDown: 19_350.0,
-    feesAccruedLp: 412.75,
-  },
-  {
-    matchId: "wc26-ger-esp",
-    home: "GER",
-    away: "ESP",
-    kickoff: "Today 21:00",
-    status: "open",
-    totalLiquidity: 54_000.0,
-    lockedLiquidity: 0,
-    feeRateBps: 200,
-    totalShares: 54_000.0,
-    exposureUp: 0,
-    exposureDown: 0,
-    feesAccruedLp: 0,
-  },
-  {
-    matchId: "wc26-por-ned",
-    home: "POR",
-    away: "NED",
-    kickoff: "Tomorrow 17:00",
-    status: "open",
-    totalLiquidity: 12_500.0,
-    lockedLiquidity: 0,
-    feeRateBps: 200,
-    totalShares: 12_500.0,
-    exposureUp: 0,
-    exposureDown: 0,
-    feesAccruedLp: 0,
-  },
-  {
-    matchId: "wc26-ita-usa",
-    home: "ITA",
-    away: "USA",
-    kickoff: "Settled",
-    status: "settled",
-    totalLiquidity: 148_900.0,
-    lockedLiquidity: 0,
-    feeRateBps: 200,
-    totalShares: 141_000.0,
-    exposureUp: 0,
-    exposureDown: 0,
-    feesAccruedLp: 3_961.2,
-  },
-];
+export type PoolsMeta = {
+  programId: string;
+  rpcUrl: string;
+  mint: string;
+};
 
-export const MOCK_POSITIONS: LpPosition[] = [
-  {
-    matchId: "wc26-bra-arg",
-    shares: 5_000,
-    depositedUsdc: 5_000,
-    claimableFees: 62.41,
-  },
-  {
-    matchId: "wc26-ita-usa",
-    shares: 2_000,
-    depositedUsdc: 2_000,
-    claimableFees: 56.19,
-  },
-];
+export const USDC_DECIMALS = 6;
+const USDC_UNIT = 1_000_000;
+
+export const BACKEND_URL =
+  process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:8787";
+
+type RawPool = {
+  pubkey: string;
+  matchId: string;
+  tag?: string;
+  status?: string;
+  mint: string;
+  vault: string;
+  totalLiquidity: string;
+  lockedLiquidity: string;
+  totalShares: string;
+  feeRate: number;
+  protocolFeesAccumulated: string;
+  lpFeesAccumulated: string;
+};
+
+type RawPosition = {
+  pool: string;
+  matchId: string | null;
+  shares: string;
+  depositedAt: number;
+  pendingFees: string;
+};
+
+export async function fetchPools(): Promise<{ meta: PoolsMeta; pools: Pool[] }> {
+  const response = await fetch(`${BACKEND_URL}/pools`, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`GET /pools failed: ${response.status}`);
+  }
+  const body = (await response.json()) as PoolsMeta & { pools: RawPool[] };
+  return {
+    meta: { programId: body.programId, rpcUrl: body.rpcUrl, mint: body.mint },
+    pools: body.pools.map((raw) => ({
+      pubkey: raw.pubkey,
+      matchId: raw.matchId,
+      tag: raw.tag ?? "",
+      status: (raw.status ?? "settled") as PoolStatus,
+      mint: raw.mint,
+      vault: raw.vault,
+      totalLiquidity: BigInt(raw.totalLiquidity),
+      lockedLiquidity: BigInt(raw.lockedLiquidity),
+      totalShares: BigInt(raw.totalShares),
+      feeRateBps: raw.feeRate,
+      protocolFeesAccumulated: BigInt(raw.protocolFeesAccumulated),
+      lpFeesAccumulated: BigInt(raw.lpFeesAccumulated),
+    })),
+  };
+}
+
+export async function fetchPositions(owner: string): Promise<LpPosition[]> {
+  const response = await fetch(`${BACKEND_URL}/pools/positions/${owner}`, {
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error(`GET /pools/positions failed: ${response.status}`);
+  }
+  const body = (await response.json()) as RawPosition[];
+  return body.map((raw) => ({
+    pool: raw.pool,
+    matchId: raw.matchId,
+    shares: BigInt(raw.shares),
+    depositedAt: raw.depositedAt,
+    pendingFees: BigInt(raw.pendingFees),
+  }));
+}
+
+/** LP principal backing shares — fees are tracked separately by the program */
+export function principalLiquidity(pool: Pool): bigint {
+  return pool.totalLiquidity - pool.protocolFeesAccumulated - pool.lpFeesAccumulated;
+}
 
 /** shares minted for a deposit — program rule (1:1 on empty pool) */
-export function sharesForDeposit(pool: Pool, amount: number): number {
-  if (pool.totalShares === 0 || pool.totalLiquidity === 0) return amount;
+export function sharesForDeposit(pool: Pool, amount: bigint): bigint {
+  if (pool.totalShares === 0n || pool.totalLiquidity === 0n) return amount;
   return (amount * pool.totalShares) / pool.totalLiquidity;
 }
 
-/** current USDC value of a shares position */
-export function positionValue(pool: Pool, shares: number): number {
-  if (pool.totalShares === 0) return 0;
-  return (shares * pool.totalLiquidity) / pool.totalShares;
+/** current USDC value of a shares position — the program's withdraw math */
+export function positionValue(pool: Pool, shares: bigint): bigint {
+  if (pool.totalShares === 0n) return 0n;
+  return (shares * principalLiquidity(pool)) / pool.totalShares;
 }
 
-/** USDC per share */
+/** shares to burn so withdraw pays out `amount` of principal */
+export function sharesForWithdrawAmount(pool: Pool, amount: bigint): bigint {
+  const principal = principalLiquidity(pool);
+  if (principal === 0n) return 0n;
+  return (amount * pool.totalShares) / principal;
+}
+
+/** USDC principal per share */
 export function sharePrice(pool: Pool): number {
-  if (pool.totalShares === 0) return 1;
-  return pool.totalLiquidity / pool.totalShares;
+  if (pool.totalShares === 0n) return 1;
+  return toUsdc(principalLiquidity(pool)) / toUsdc(pool.totalShares);
 }
 
 /** unlocked fraction of the pool — withdrawals are capped to it */
 export function unlockedRatio(pool: Pool): number {
-  if (pool.totalLiquidity === 0) return 1;
-  return 1 - pool.lockedLiquidity / pool.totalLiquidity;
+  if (pool.totalLiquidity === 0n) return 1;
+  return 1 - toUsdc(pool.lockedLiquidity) / toUsdc(pool.totalLiquidity);
+}
+
+/** liquidity not backing open bets — the program's withdraw cap */
+export function availableLiquidity(pool: Pool): bigint {
+  return pool.totalLiquidity - pool.lockedLiquidity;
+}
+
+export function toUsdc(value: bigint): number {
+  return Number(value) / USDC_UNIT;
+}
+
+export function fromUsdc(value: number): bigint {
+  return BigInt(Math.round(value * USDC_UNIT));
 }
 
 export function formatUsdc(v: number): string {
@@ -157,4 +171,13 @@ export function formatUsdc(v: number): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
+}
+
+export function clusterLabel(rpcUrl: string | undefined): string {
+  if (!rpcUrl) return "";
+  if (rpcUrl.includes("testnet")) return "Testnet";
+  if (rpcUrl.includes("devnet")) return "Devnet";
+  if (rpcUrl.includes("mainnet")) return "Mainnet";
+  if (rpcUrl.includes("localhost") || rpcUrl.includes("127.0.0.1")) return "Localnet";
+  return "Custom RPC";
 }
