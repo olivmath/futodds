@@ -1,6 +1,7 @@
-const HOME_NAMES = new Set(["1", "home", "participant1"]);
+const HOME_NAMES = new Set(["1", "home", "participant1", "part1"]);
 const DRAW_NAMES = new Set(["x", "draw"]);
-const AWAY_NAMES = new Set(["2", "away", "participant2"]);
+const AWAY_NAMES = new Set(["2", "away", "participant2", "part2"]);
+const ONE_X_TWO_TYPES = new Set(["1x2", "1x2_participant_result"]);
 
 export function selectTxlineOdds(entries, {
   superOddsType = "1X2",
@@ -23,7 +24,8 @@ function isExpectedMarket(entry, superOddsType, marketPeriod) {
   const actualType = normalizeText(entry.SuperOddsType);
   const expectedType = normalizeText(superOddsType);
   // Accept any MarketPeriod value - txline returns what's available
-  return actualType === expectedType;
+  return actualType === expectedType
+    || (expectedType === "1x2" && ONE_X_TWO_TYPES.has(actualType));
 }
 
 function extractOutcomeValues(entry) {

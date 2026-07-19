@@ -47,13 +47,28 @@ test("selectTxlineOdds skips non-1X2 markets and rejects missing home draw away 
         FixtureId: 17588231,
         SuperOddsType: "1X2",
         MarketPeriod: "FirstHalf",
-        PriceNames: ["1", "X", "2"],
-        Prices: [2000, 3500, 4000],
-        Pct: ["50.000", "28.000", "22.000"],
+        PriceNames: ["1", "2"],
+        Prices: [2000, 4000],
+        Pct: ["50.000", "22.000"],
       },
     ]),
     null,
   );
+});
+
+test("selectTxlineOdds maps the live participant-result aliases", () => {
+  const odds = selectTxlineOdds([
+    {
+      FixtureId: 18257739,
+      SuperOddsType: "1X2_PARTICIPANT_RESULT",
+      MarketPeriod: "et",
+      PriceNames: ["part1", "draw", "part2"],
+      Prices: [1093, 13000, 120000],
+      Pct: ["91.491", "7.692", "0.833"],
+    },
+  ]);
+
+  assert.deepEqual(odds, { home: 9148, away: 83, draw: 769 });
 });
 
 test("selectTxlineOdds keeps normalized odds summing to 10000 after rounding", () => {
