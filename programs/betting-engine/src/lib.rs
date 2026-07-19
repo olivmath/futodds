@@ -31,6 +31,7 @@ pub mod betting_engine {
         pool.locked_liquidity = 0;
         pool.fee_rate = fee_rate;
         pool.protocol_fees_accumulated = 0;
+        pool.lp_fees_accumulated = 0;
         pool.fees_per_share = 0;
         pool.total_shares = 0;
         pool.bump = ctx.bumps.pool;
@@ -185,6 +186,10 @@ pub mod betting_engine {
             .protocol_fees_accumulated
             .checked_add(protocol_fee)
             .ok_or(BettingError::MathOverflow)?;
+        pool.lp_fees_accumulated = pool
+            .lp_fees_accumulated
+            .checked_add(lp_fee)
+            .ok_or(BettingError::MathOverflow)?;
         pool.fees_per_share = pool
             .fees_per_share
             .checked_add(
@@ -275,6 +280,138 @@ pub mod betting_engine {
 
         Ok(())
     }
+
+    pub fn claim_fees(ctx: Context<ClaimFees>) -> Result<()> {
+        let pending = pending_fees(&ctx.accounts.pool, &ctx.accounts.lp_position)?;
+        ctx.accounts.lp_position.fees_claimed_per_share = ctx.accounts.pool.fees_per_share;
+
+        if pending == 0 {
+            return Ok(());
+        }
+
+        let match_id = ctx.accounts.pool.match_id.as_bytes();
+        let seeds: &[&[u8]] = &[
+            b"vault",
+            match_id,
+            &[ctx.accounts.pool.vault_authority_bump],
+        ];
+        let signer_seeds = &[seeds];
+
+        token::transfer(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.key(),
+                Transfer {
+                    from: ctx.accounts.vault.to_account_info(),
+                    to: ctx.accounts.owner_token_account.to_account_info(),
+                    authority: ctx.accounts.vault_authority.to_account_info(),
+                },
+                signer_seeds,
+            ),
+            pending,
+        )?;
+
+        ctx.accounts.pool.total_liquidity = ctx
+            .accounts
+            .pool
+            .total_liquidity
+            .checked_sub(pending)
+            .ok_or(BettingError::MathOverflow)?;
+        ctx.accounts.pool.lp_fees_accumulated = ctx
+            .accounts
+            .pool
+            .lp_fees_accumulated
+            .checked_sub(pending)
+            .ok_or(BettingError::MathOverflow)?;
+
+        Ok(())
+    }
+
+    pub fn withdraw(ctx: Context<Withdraw>, shares: u64) -> Result<()> {
+        require!(shares > 0, BettingError::WithdrawTooSmall);
+        require!(
+            ctx.accounts.lp_position.shares >= shares,
+            BettingError::InsufficientShares
+        );
+
+        let pending = pending_fees(&ctx.accounts.pool, &ctx.accounts.lp_position)?;
+        let principal_liquidity = ctx
+            .accounts
+            .pool
+            .total_liquidity
+            .checked_sub(ctx.accounts.pool.protocol_fees_accumulated)
+            .ok_or(BettingError::MathOverflow)?
+            .checked_sub(ctx.accounts.pool.lp_fees_accumulated)
+            .ok_or(BettingError::MathOverflow)?;
+        let withdraw_amount = checked_u128_to_u64(
+            (shares as u128)
+                .checked_mul(principal_liquidity as u128)
+                .ok_or(BettingError::MathOverflow)?
+                .checked_div(ctx.accounts.pool.total_shares as u128)
+                .ok_or(BettingError::MathOverflow)?,
+        )?;
+        let total_transfer = withdraw_amount
+            .checked_add(pending)
+            .ok_or(BettingError::MathOverflow)?;
+        let available = ctx
+            .accounts
+            .pool
+            .total_liquidity
+            .checked_sub(ctx.accounts.pool.locked_liquidity)
+            .ok_or(BettingError::MathOverflow)?;
+        require!(
+            total_transfer <= available,
+            BettingError::InsufficientLiquidity
+        );
+
+        ctx.accounts.lp_position.shares = ctx
+            .accounts
+            .lp_position
+            .shares
+            .checked_sub(shares)
+            .ok_or(BettingError::MathOverflow)?;
+        ctx.accounts.lp_position.fees_claimed_per_share = ctx.accounts.pool.fees_per_share;
+        ctx.accounts.pool.total_shares = ctx
+            .accounts
+            .pool
+            .total_shares
+            .checked_sub(shares)
+            .ok_or(BettingError::MathOverflow)?;
+        ctx.accounts.pool.total_liquidity = ctx
+            .accounts
+            .pool
+            .total_liquidity
+            .checked_sub(total_transfer)
+            .ok_or(BettingError::MathOverflow)?;
+        ctx.accounts.pool.lp_fees_accumulated = ctx
+            .accounts
+            .pool
+            .lp_fees_accumulated
+            .checked_sub(pending)
+            .ok_or(BettingError::MathOverflow)?;
+
+        let match_id = ctx.accounts.pool.match_id.as_bytes();
+        let seeds: &[&[u8]] = &[
+            b"vault",
+            match_id,
+            &[ctx.accounts.pool.vault_authority_bump],
+        ];
+        let signer_seeds = &[seeds];
+
+        token::transfer(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.key(),
+                Transfer {
+                    from: ctx.accounts.vault.to_account_info(),
+                    to: ctx.accounts.owner_token_account.to_account_info(),
+                    authority: ctx.accounts.vault_authority.to_account_info(),
+                },
+                signer_seeds,
+            ),
+            total_transfer,
+        )?;
+
+        Ok(())
+    }
 }
 
 #[derive(Accounts)]
@@ -345,6 +482,80 @@ pub struct Deposit<'info> {
 
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct ClaimFees<'info> {
+    #[account(mut)]
+    pub owner: Signer<'info>,
+
+    #[account(mut, has_one = mint, has_one = vault)]
+    pub pool: Account<'info, Pool>,
+
+    #[account(
+        mut,
+        seeds = [b"lp", pool.key().as_ref(), owner.key().as_ref()],
+        bump = lp_position.bump,
+    )]
+    pub lp_position: Account<'info, LpPosition>,
+
+    pub mint: Account<'info, Mint>,
+
+    #[account(
+        seeds = [b"vault", pool.match_id.as_bytes()],
+        bump = pool.vault_authority_bump,
+    )]
+    /// CHECK: PDA authority for the pool vault token account.
+    pub vault_authority: UncheckedAccount<'info>,
+
+    #[account(mut)]
+    pub vault: Account<'info, TokenAccount>,
+
+    #[account(
+        mut,
+        constraint = owner_token_account.owner == owner.key(),
+        constraint = owner_token_account.mint == mint.key(),
+    )]
+    pub owner_token_account: Account<'info, TokenAccount>,
+
+    pub token_program: Program<'info, Token>,
+}
+
+#[derive(Accounts)]
+pub struct Withdraw<'info> {
+    #[account(mut)]
+    pub owner: Signer<'info>,
+
+    #[account(mut, has_one = mint, has_one = vault)]
+    pub pool: Account<'info, Pool>,
+
+    #[account(
+        mut,
+        seeds = [b"lp", pool.key().as_ref(), owner.key().as_ref()],
+        bump = lp_position.bump,
+    )]
+    pub lp_position: Account<'info, LpPosition>,
+
+    pub mint: Account<'info, Mint>,
+
+    #[account(
+        seeds = [b"vault", pool.match_id.as_bytes()],
+        bump = pool.vault_authority_bump,
+    )]
+    /// CHECK: PDA authority for the pool vault token account.
+    pub vault_authority: UncheckedAccount<'info>,
+
+    #[account(mut)]
+    pub vault: Account<'info, TokenAccount>,
+
+    #[account(
+        mut,
+        constraint = owner_token_account.owner == owner.key(),
+        constraint = owner_token_account.mint == mint.key(),
+    )]
+    pub owner_token_account: Account<'info, TokenAccount>,
+
+    pub token_program: Program<'info, Token>,
 }
 
 #[event]
@@ -467,6 +678,7 @@ pub struct Pool {
     pub locked_liquidity: u64,
     pub fee_rate: u16,
     pub protocol_fees_accumulated: u64,
+    pub lp_fees_accumulated: u64,
     pub fees_per_share: u128,
     pub total_shares: u64,
     pub bump: u8,
@@ -502,6 +714,10 @@ pub enum BettingError {
     InvalidFeeRate,
     #[msg("Deposit is below the minimum amount")]
     DepositTooSmall,
+    #[msg("Withdraw amount must be greater than zero")]
+    WithdrawTooSmall,
+    #[msg("LP position does not have enough shares")]
+    InsufficientShares,
     #[msg("Pool match does not match bet match")]
     PoolMatchMismatch,
     #[msg("Pool mint does not match token mint")]
@@ -516,4 +732,18 @@ pub enum BettingError {
 
 pub fn checked_u128_to_u64(value: u128) -> Result<u64> {
     u64::try_from(value).map_err(|_| BettingError::MathOverflow.into())
+}
+
+pub fn pending_fees(pool: &Pool, lp_position: &LpPosition) -> Result<u64> {
+    let delta = pool
+        .fees_per_share
+        .checked_sub(lp_position.fees_claimed_per_share)
+        .ok_or(BettingError::MathOverflow)?;
+    checked_u128_to_u64(
+        delta
+            .checked_mul(lp_position.shares as u128)
+            .ok_or(BettingError::MathOverflow)?
+            .checked_div(FEE_SCALE)
+            .ok_or(BettingError::MathOverflow)?,
+    )
 }

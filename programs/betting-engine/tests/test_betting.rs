@@ -10,7 +10,7 @@ use {
         associated_token::{self, get_associated_token_address, spl_associated_token_account},
         token::spl_token,
     },
-    betting_engine::{Bet, Pool},
+    betting_engine::{Bet, LpPosition, Pool},
     litesvm::{types::TransactionMetadata, LiteSVM},
     solana_keypair::Keypair,
     solana_message::{Message, VersionedMessage},
@@ -136,10 +136,64 @@ fn build_deposit_ix(owner: &Pubkey, mint: &Pubkey, match_id: &str, amount: u64) 
     )
 }
 
+fn build_claim_fees_ix(owner: &Pubkey, mint: &Pubkey, match_id: &str) -> Instruction {
+    let pool = pool_pda(match_id);
+    let lp_position = lp_position_pda(&pool, owner);
+    let vault_authority = pool_vault_authority(match_id);
+    let vault = get_associated_token_address(&vault_authority, mint);
+    let owner_token_account = get_associated_token_address(owner, mint);
+
+    Instruction::new_with_bytes(
+        betting_engine::id(),
+        &betting_engine::instruction::ClaimFees {}.data(),
+        betting_engine::accounts::ClaimFees {
+            owner: *owner,
+            pool,
+            lp_position,
+            mint: *mint,
+            vault_authority,
+            vault,
+            owner_token_account,
+            token_program: spl_token::ID,
+        }
+        .to_account_metas(None),
+    )
+}
+
+fn build_withdraw_ix(owner: &Pubkey, mint: &Pubkey, match_id: &str, shares: u64) -> Instruction {
+    let pool = pool_pda(match_id);
+    let lp_position = lp_position_pda(&pool, owner);
+    let vault_authority = pool_vault_authority(match_id);
+    let vault = get_associated_token_address(&vault_authority, mint);
+    let owner_token_account = get_associated_token_address(owner, mint);
+
+    Instruction::new_with_bytes(
+        betting_engine::id(),
+        &betting_engine::instruction::Withdraw { shares }.data(),
+        betting_engine::accounts::Withdraw {
+            owner: *owner,
+            pool,
+            lp_position,
+            mint: *mint,
+            vault_authority,
+            vault,
+            owner_token_account,
+            token_program: spl_token::ID,
+        }
+        .to_account_metas(None),
+    )
+}
+
 fn read_pool(svm: &LiteSVM, match_id: &str) -> Pool {
     let pool = pool_pda(match_id);
     let account = svm.get_account(&pool).unwrap();
     Pool::try_deserialize(&mut account.data.as_slice()).unwrap()
+}
+
+fn read_lp_position(svm: &LiteSVM, pool: &Pubkey, owner: &Pubkey) -> LpPosition {
+    let lp_position = lp_position_pda(pool, owner);
+    let account = svm.get_account(&lp_position).unwrap();
+    LpPosition::try_deserialize(&mut account.data.as_slice()).unwrap()
 }
 
 fn setup_pool_with_liquidity(env: &mut TestEnv, amount: u64) {
@@ -636,6 +690,176 @@ fn test_reject_pool_without_enough_liquidity() {
         res.is_err(),
         "Expected InsufficientLiquidity error but tx succeeded"
     );
+}
+
+// ===========================================================================
+// LP withdraw/fees tests
+// ===========================================================================
+
+#[test]
+fn test_withdraw_unlocked_liquidity() {
+    let mut env = setup();
+    let lp = Keypair::new();
+    let deposit_amount = 10_000_000_000;
+    let withdraw_shares = 5_000_000_000;
+
+    env.svm.airdrop(&lp.pubkey(), 10_000_000_000).unwrap();
+    let lp_ata = create_ata(&mut env.svm, &env.authority, &lp.pubkey(), &env.usdc_mint);
+    mint_to(
+        &mut env.svm,
+        &env.authority,
+        &env.usdc_mint,
+        &lp_ata,
+        &env.authority,
+        deposit_amount,
+    );
+    send_tx(
+        &mut env.svm,
+        build_create_pool_ix(&env.authority.pubkey(), &env.usdc_mint, MATCH_ID, 200),
+        &env.authority,
+    )
+    .unwrap();
+    send_tx(
+        &mut env.svm,
+        build_deposit_ix(&lp.pubkey(), &env.usdc_mint, MATCH_ID, deposit_amount),
+        &lp,
+    )
+    .unwrap();
+
+    let ix = build_withdraw_ix(&lp.pubkey(), &env.usdc_mint, MATCH_ID, withdraw_shares);
+    let res = send_tx(&mut env.svm, ix, &lp);
+    assert!(res.is_ok(), "Failed to withdraw: {:?}", res.err());
+
+    let pool_key = pool_pda(MATCH_ID);
+    let pool = read_pool(&env.svm, MATCH_ID);
+    let position = read_lp_position(&env.svm, &pool_key, &lp.pubkey());
+
+    assert_eq!(get_token_balance(&env.svm, &lp_ata), withdraw_shares);
+    assert_eq!(pool.total_liquidity, 5_000_000_000);
+    assert_eq!(pool.total_shares, 5_000_000_000);
+    assert_eq!(position.shares, 5_000_000_000);
+}
+
+#[test]
+fn test_claim_fees_after_bet() {
+    let mut env = setup();
+    let lp = Keypair::new();
+    let user = Keypair::new();
+    let deposit_amount = 10_000_000_000;
+    let bet_amount = 100_000_000;
+    let nonce = 0u32;
+
+    create_oracle_match(&mut env.svm, &env.authority, MATCH_ID, 6500, 3000, 500);
+    env.svm.airdrop(&lp.pubkey(), 10_000_000_000).unwrap();
+    env.svm.airdrop(&user.pubkey(), 10_000_000_000).unwrap();
+    let lp_ata = create_ata(&mut env.svm, &env.authority, &lp.pubkey(), &env.usdc_mint);
+    let user_ata = create_ata(&mut env.svm, &user, &user.pubkey(), &env.usdc_mint);
+    mint_to(
+        &mut env.svm,
+        &env.authority,
+        &env.usdc_mint,
+        &lp_ata,
+        &env.authority,
+        deposit_amount,
+    );
+    mint_to(
+        &mut env.svm,
+        &env.authority,
+        &env.usdc_mint,
+        &user_ata,
+        &env.authority,
+        bet_amount,
+    );
+    send_tx(
+        &mut env.svm,
+        build_create_pool_ix(&env.authority.pubkey(), &env.usdc_mint, MATCH_ID, 200),
+        &env.authority,
+    )
+    .unwrap();
+    send_tx(
+        &mut env.svm,
+        build_deposit_ix(&lp.pubkey(), &env.usdc_mint, MATCH_ID, deposit_amount),
+        &lp,
+    )
+    .unwrap();
+    send_tx(
+        &mut env.svm,
+        build_place_bet_ix(&user, MATCH_ID, &env.usdc_mint, 0, 60, bet_amount, nonce),
+        &user,
+    )
+    .unwrap();
+
+    let ix = build_claim_fees_ix(&lp.pubkey(), &env.usdc_mint, MATCH_ID);
+    let res = send_tx(&mut env.svm, ix, &lp);
+    assert!(res.is_ok(), "Failed to claim fees: {:?}", res.err());
+
+    let pool_key = pool_pda(MATCH_ID);
+    let pool = read_pool(&env.svm, MATCH_ID);
+    let position = read_lp_position(&env.svm, &pool_key, &lp.pubkey());
+
+    assert_eq!(get_token_balance(&env.svm, &lp_ata), 1_500_000);
+    assert_eq!(pool.protocol_fees_accumulated, 500_000);
+    assert_eq!(position.fees_claimed_per_share, pool.fees_per_share);
+}
+
+#[test]
+fn test_reject_withdraw_when_liquidity_locked() {
+    let mut env = setup();
+    let lp = Keypair::new();
+    let user = Keypair::new();
+    let deposit_amount = 10_000_000_000;
+    let bet_amount = 5_000_000_000;
+    let nonce = 0u32;
+
+    create_oracle_match(&mut env.svm, &env.authority, MATCH_ID, 6500, 3000, 500);
+    env.svm.airdrop(&lp.pubkey(), 10_000_000_000).unwrap();
+    env.svm.airdrop(&user.pubkey(), 10_000_000_000).unwrap();
+    let lp_ata = create_ata(&mut env.svm, &env.authority, &lp.pubkey(), &env.usdc_mint);
+    let user_ata = create_ata(&mut env.svm, &user, &user.pubkey(), &env.usdc_mint);
+    mint_to(
+        &mut env.svm,
+        &env.authority,
+        &env.usdc_mint,
+        &lp_ata,
+        &env.authority,
+        deposit_amount,
+    );
+    mint_to(
+        &mut env.svm,
+        &env.authority,
+        &env.usdc_mint,
+        &user_ata,
+        &env.authority,
+        bet_amount,
+    );
+    send_tx(
+        &mut env.svm,
+        build_create_pool_ix(&env.authority.pubkey(), &env.usdc_mint, MATCH_ID, 200),
+        &env.authority,
+    )
+    .unwrap();
+    send_tx(
+        &mut env.svm,
+        build_deposit_ix(&lp.pubkey(), &env.usdc_mint, MATCH_ID, deposit_amount),
+        &lp,
+    )
+    .unwrap();
+    send_tx(
+        &mut env.svm,
+        build_place_bet_ix(&user, MATCH_ID, &env.usdc_mint, 0, 60, bet_amount, nonce),
+        &user,
+    )
+    .unwrap();
+
+    let ix = build_withdraw_ix(&lp.pubkey(), &env.usdc_mint, MATCH_ID, deposit_amount);
+    let res = send_tx(&mut env.svm, ix, &lp);
+    let pool = read_pool(&env.svm, MATCH_ID);
+
+    assert!(
+        res.is_err(),
+        "Expected InsufficientLiquidity error but tx succeeded"
+    );
+    assert!(pool.locked_liquidity > 0);
 }
 
 // ===========================================================================
