@@ -3,6 +3,10 @@
 ## Objetivo
 place_bet e settle_bet usam o vault do pool, nao escrow proprio.
 
+## Status
+
+Concluida no programa `betting-engine`. O pool ativo fica no mesmo programa das apostas para que o programa dono consiga alterar `Pool` e assinar pelo vault PDA sem CPI entre programas.
+
 ## Implementacao
 
 | Item | Detalhe |
@@ -11,7 +15,7 @@ place_bet e settle_bet usam o vault do pool, nao escrow proprio.
 | **Refactor settle_bet** | Paga do vault do Pool, unlock liquidity |
 | **Fee** | 2% por bet (amount * fee_rate / 10000) |
 | **Remover** | Vault escrow do betting-engine |
-| **Pool PDA** | Adicionar `locked_liquidity: u64` |
+| **Pool PDA** | `locked_liquidity`, fees e shares no `betting-engine` |
 
 ## Fluxo de USDC
 
@@ -38,6 +42,15 @@ settle Lost: pool.locked_liquidity -= payout
 
 ## Criterios de Sucesso
 
-- [ ] `anchor test` — 5/5 novos + 21 anteriores passando
-- [ ] locked_liquidity no Pool PDA reflete bets abertas
-- [ ] USDC flui: user → pool vault → winner
+- [x] `cargo test -p betting_engine` — 17/17 testes passando
+- [x] locked_liquidity no Pool PDA reflete bets abertas
+- [x] USDC flui: user → pool vault → winner
+
+## Evidencia No Codigo
+
+| Arquivo | O que valida |
+|---|---|
+| `programs/betting-engine/src/lib.rs` | `place_bet` transfere para pool vault e trava payout |
+| `programs/betting-engine/src/lib.rs` | `settle_bet` destrava payout e paga do pool vault |
+| `programs/betting-engine/tests/test_betting.rs` | Testa fee, locked liquidity, payout e pool sem liquidez |
+| `backend/src/solana.js` | Settlement backend passa `Pool` e vault PDA seed `["vault", match_id]` |

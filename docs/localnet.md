@@ -9,7 +9,10 @@
 | Frontend | `http://127.0.0.1:5173` |
 | `oracle_adapter` | `BfWcrr3Mv4StpqSyaMUZtsLLUTM9cLkNeaARRdwSFSCN` |
 | `betting_engine` | `FBXnZZHR3ndsE2oYak4EQaFTPZsEC7d34C8tQfE7hkm4` |
+| `liquidity_pool` | `B4LZJT28Ucqe3eCpSrhQCiBhZ2dfCxH1eMVWfQqShgy9` |
 | Test USDC mint | `Gemud42VXfBFPm4HhdSfeG8MoFBjsAsEDitza6muv3yx` |
+
+Fase 2 usa `Pool` e `LpPosition` ativos dentro de `betting_engine`. O programa `liquidity_pool` existe no workspace como scaffold/teste isolado.
 
 ## Start From Clean Localnet
 
