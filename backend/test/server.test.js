@@ -9,7 +9,7 @@ const silentLogger = { info() {}, error() {} };
 test("backend API allows browser calls from the Vite app", async () => {
   const server = createServer(
     createApp({
-      store: createStore([]),
+      store: createStore(),
       poller: { start() {}, stop() {} },
       settlementWorker: { runOnce: async () => ({ checked: 0, settled: 0 }) },
       logger: silentLogger,
@@ -35,7 +35,7 @@ test("backend API allows browser calls from the Vite app", async () => {
 test("health endpoint renders an operational HTML page for browsers", async () => {
   const server = createServer(
     createApp({
-      store: createStore([{ id: "match_1", odds: { home: 6500, away: 3000, draw: 500 } }]),
+      store: createStore(),
       poller: { start() {}, stop() {} },
       settlementWorker: { runOnce: async () => ({ checked: 0, settled: 0 }) },
       healthCheck: async () => ({
@@ -82,7 +82,7 @@ test("health endpoint renders an operational HTML page for browsers", async () =
 test("backend API handles CORS preflight", async () => {
   const server = createServer(
     createApp({
-      store: createStore([]),
+      store: createStore(),
       poller: { start() {}, stop() {} },
       settlementWorker: { runOnce: async () => ({ checked: 0, settled: 0 }) },
       logger: silentLogger,
@@ -110,11 +110,11 @@ test("backend API handles CORS preflight", async () => {
   }
 });
 
-test("backend API logs requests and admin actions", async () => {
+test("backend API logs admin actions", async () => {
   const logs = [];
   const server = createServer(
     createApp({
-      store: createStore([]),
+      store: createStore(),
       poller: { start() {}, stop() {} },
       settlementWorker: { runOnce: async () => ({ checked: 0, settled: 0 }) },
       logger: { info: (event, details) => logs.push({ event, details }), error() {} },
@@ -128,8 +128,152 @@ test("backend API logs requests and admin actions", async () => {
   try {
     await fetch(`http://127.0.0.1:${address.port}/poller/start`, { method: "POST" });
 
-    assert.ok(logs.some((log) => log.event === "http.request" && log.details.path === "/poller/start"));
     assert.ok(logs.some((log) => log.event === "admin.poller.start"));
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("backend API registers per-match odds source metadata", async () => {
+  const store = createStore();
+  const server = createServer(
+    createApp({
+      store,
+      poller: { start() {}, stop() {} },
+      settlementWorker: { runOnce: async () => ({ checked: 0, settled: 0 }) },
+      logger: silentLogger,
+    }),
+  );
+
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.equal(typeof address, "object");
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${address.port}/matches/17588229/source`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ oddsSource: "txline" }),
+    });
+
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).oddsSource, "txline");
+    store.replaceMatches([{ id: "17588229", odds: { home: 6500, away: 3000, draw: 500 }, status: 0 }]);
+    assert.equal(store.getMatch("17588229")?.oddsSource, "txline");
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("GET /leagues returns soccer leagues from the CSV", async () => {
+  const server = createServer(
+    createApp({
+      store: createStore(),
+      poller: { start() {}, stop() {} },
+      settlementWorker: { runOnce: async () => ({ checked: 0, settled: 0 }) },
+      logger: silentLogger,
+    }),
+  );
+
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.equal(typeof address, "object");
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${address.port}/leagues`);
+    assert.equal(response.status, 200);
+    const leagues = await response.json();
+    assert.ok(Array.isArray(leagues));
+    assert.ok(leagues.length > 0);
+    assert.ok(leagues[0].country);
+    assert.ok(leagues[0].competition);
+    assert.ok(typeof leagues[0].competitionId === "number");
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("GET /fixtures proxies to txlineClient.fetchFixturesSnapshot", async () => {
+  const fakeFixtures = [
+    { FixtureId: 17588229, Home: "Arsenal", Away: "Chelsea" },
+    { FixtureId: 17588230, Home: "Liverpool", Away: "Man City" },
+  ];
+  const txlineClient = {
+    fetchFixturesSnapshot: async ({ competitionId }) => {
+      assert.equal(competitionId, 8);
+      return fakeFixtures;
+    },
+  };
+
+  const server = createServer(
+    createApp({
+      store: createStore(),
+      poller: { start() {}, stop() {} },
+      settlementWorker: { runOnce: async () => ({ checked: 0, settled: 0 }) },
+      txlineClient,
+      logger: silentLogger,
+    }),
+  );
+
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.equal(typeof address, "object");
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${address.port}/fixtures?competitionId=8`);
+    assert.equal(response.status, 200);
+    const fixtures = await response.json();
+    assert.deepEqual(fixtures, fakeFixtures);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("GET /fixtures returns 503 when txlineClient is not configured", async () => {
+  const server = createServer(
+    createApp({
+      store: createStore(),
+      poller: { start() {}, stop() {} },
+      settlementWorker: { runOnce: async () => ({ checked: 0, settled: 0 }) },
+      txlineClient: null,
+      logger: silentLogger,
+    }),
+  );
+
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.equal(typeof address, "object");
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${address.port}/fixtures`);
+    assert.equal(response.status, 503);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("backend API rejects invalid per-match odds source metadata", async () => {
+  const server = createServer(
+    createApp({
+      store: createStore(),
+      poller: { start() {}, stop() {} },
+      settlementWorker: { runOnce: async () => ({ checked: 0, settled: 0 }) },
+      logger: silentLogger,
+    }),
+  );
+
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.equal(typeof address, "object");
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${address.port}/matches/17588229/source`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ oddsSource: "manual" }),
+    });
+
+    assert.equal(response.status, 400);
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }

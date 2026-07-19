@@ -1,5 +1,6 @@
 import express from "express";
-import { loadConfig, loadKeypair } from "./config.js";
+import { AppConfig } from "./appConfig.js";
+import { loadKeypair } from "./config.js";
 import { createOddsPoller } from "./oddsPoller.js";
 import { createSettlementWorker } from "./settlementWorker.js";
 import { createStore } from "./store.js";
@@ -7,16 +8,25 @@ import {
   BETTING_PROGRAM_ID,
   ORACLE_PROGRAM_ID,
   createConnection,
+  fetchOpenMatches,
   fetchOpenBets,
   sendSettleBet,
+  sendSetMatchStatus,
   sendUpdateOdds,
 } from "./solana.js";
 import { logger as defaultLogger } from "./logger.js";
+import { createTxlineClient } from "./txlineClient.js";
+import { loadLeagues } from "./leagues.js";
+import { createTxlineStream } from "./txlineStream.js";
 
 export function createApp({
   store,
   poller,
   settlementWorker,
+  txlineClient = null,
+  txlineStream = null,
+  createMatch = null,
+  closeMatch = null,
   logger = defaultLogger,
   healthCheck = async () => ({ ok: true }),
 }) {
@@ -32,13 +42,6 @@ export function createApp({
     next();
   });
   app.use(express.json());
-  app.use((req, res, next) => {
-    logger.info("http.request", { method: req.method, path: req.path });
-    res.on("finish", () => {
-      logger.info("http.response", { method: req.method, path: req.path, status: res.statusCode });
-    });
-    next();
-  });
 
   app.get("/health", async (req, res, next) => {
     try {
@@ -54,6 +57,74 @@ export function createApp({
   });
   app.get("/status", (_req, res) => res.json(store.status));
   app.get("/matches", (_req, res) => res.json(store.listMatches()));
+  app.post("/matches/:matchId/source", (req, res) => {
+    const oddsSource = req.body?.oddsSource;
+    if (oddsSource !== "random" && oddsSource !== "txline") {
+      res.status(400).json({ error: "oddsSource must be random or txline" });
+      return;
+    }
+    store.setMatchOddsSource(req.params.matchId, oddsSource);
+    logger.info("admin.match.source", { matchId: req.params.matchId, oddsSource });
+    res.json({ matchId: req.params.matchId, oddsSource });
+  });
+  app.post("/matches/:matchId/close", async (req, res, next) => {
+    try {
+      if (!closeMatch) {
+        res.status(503).json({ error: "closeMatch not available" });
+        return;
+      }
+      const matchId = req.params.matchId;
+      const signature = await closeMatch(matchId);
+      store.recordTx({ type: "close_match", matchId, signature });
+      logger.info("admin.match.close", { matchId, signature });
+      res.json({ matchId, status: "closed", signature });
+    } catch (error) {
+      next(error);
+    }
+  });
+  app.post("/matches", async (req, res, next) => {
+    try {
+      const matchId = req.body?.matchId;
+      const tag = req.body?.tag ?? "";
+      const oddsSource = req.body?.oddsSource ?? "txline";
+      if (!matchId || typeof matchId !== "string") {
+        res.status(400).json({ error: "matchId is required" });
+        return;
+      }
+      if (oddsSource !== "random" && oddsSource !== "txline") {
+        res.status(400).json({ error: "oddsSource must be random or txline" });
+        return;
+      }
+      if (!createMatch) {
+        res.status(503).json({ error: "createMatch not available" });
+        return;
+      }
+      const odds = req.body?.odds ?? { home: 3334, away: 3333, draw: 3333 };
+      const signature = await createMatch(matchId, odds, tag);
+      store.setMatchOddsSource(matchId, oddsSource);
+      store.recordTx({ type: "create_match", matchId, signature });
+      logger.info("admin.match.create", { matchId, tag, oddsSource, signature });
+      res.json({ matchId, tag, oddsSource, signature });
+    } catch (error) {
+      next(error);
+    }
+  });
+  app.get("/leagues", (_req, res) => {
+    res.json(loadLeagues());
+  });
+  app.get("/fixtures", async (req, res, next) => {
+    try {
+      if (!txlineClient) {
+        res.status(503).json({ error: "TxLINE credentials not configured" });
+        return;
+      }
+      const competitionId = req.query.competitionId ? Number(req.query.competitionId) : undefined;
+      const fixtures = await txlineClient.fetchFixturesSnapshot({ competitionId });
+      res.json(fixtures);
+    } catch (error) {
+      next(error);
+    }
+  });
   app.post("/poller/start", (_req, res) => {
     logger.info("admin.poller.start");
     poller.start();
@@ -72,6 +143,115 @@ export function createApp({
       next(error);
     }
   });
+  app.post("/stream/start/:matchId", async (req, res, next) => {
+    try {
+      const matchId = req.params.matchId;
+      if (!txlineStream) {
+        res.status(503).json({ error: "TxLINE stream not configured" });
+        return;
+      }
+      const match = store.getMatch(matchId);
+      if (!match) {
+        res.status(404).json({ error: `Match not found: ${matchId}` });
+        return;
+      }
+      if (match.oddsSource !== "txline") {
+        res.status(400).json({ error: `Match ${matchId} is not configured for TxLINE` });
+        return;
+      }
+      const fixtureId = store.getFixtureId(matchId);
+      if (!fixtureId) {
+        res.status(400).json({ error: `Match ${matchId} has no fixtureId configured` });
+        return;
+      }
+      if (!txlineStream.isConnected()) {
+        try {
+          await txlineStream.connect();
+        } catch (error) {
+          logger.error("stream.error", { matchId, error: error instanceof Error ? error.message : String(error) });
+          res.status(503).json({ error: "Failed to connect to TxLINE stream" });
+          return;
+        }
+      }
+      txlineStream.onOdds(fixtureId, (odds) => {
+        store.setLatestOdds(matchId, {
+          home: odds.Prices?.[0] ?? 0,
+          away: odds.Prices?.[1] ?? 0,
+          draw: odds.Prices?.[2] ?? 0,
+        });
+      });
+      store.setStreamStatus(matchId, "active");
+      logger.info("stream.started", { matchId, fixtureId });
+      res.json({ matchId, status: "active", fixtureId });
+    } catch (error) {
+      next(error);
+    }
+  });
+  app.post("/stream/stop/:matchId", (req, res) => {
+    const matchId = req.params.matchId;
+    store.setStreamStatus(matchId, "inactive");
+    if (txlineStream) {
+      txlineStream.offOdds(store.getFixtureId(matchId));
+      const activeFixtures = txlineStream.getActiveFixtures();
+      if (activeFixtures.length === 0) {
+        txlineStream.disconnect();
+      }
+    }
+    logger.info("stream.stopped", { matchId });
+    res.json({ matchId, status: "inactive" });
+  });
+  app.post("/stream/resume/:matchId", async (req, res, next) => {
+    try {
+      const matchId = req.params.matchId;
+      const status = store.getStreamStatus(matchId);
+      if (status !== "paused") {
+        res.status(400).json({ error: `Stream for ${matchId} is not paused (current: ${status})` });
+        return;
+      }
+      if (!txlineStream) {
+        res.status(503).json({ error: "TxLINE stream not configured" });
+        return;
+      }
+      const fixtureId = store.getFixtureId(matchId);
+      if (!fixtureId) {
+        res.status(400).json({ error: `Match ${matchId} has no fixtureId configured` });
+        return;
+      }
+      try {
+        await txlineStream.connect();
+        txlineStream.onOdds(fixtureId, (odds) => {
+          store.setLatestOdds(matchId, {
+            home: odds.Prices?.[0] ?? 0,
+            away: odds.Prices?.[1] ?? 0,
+            draw: odds.Prices?.[2] ?? 0,
+          });
+        });
+        store.setStreamStatus(matchId, "active");
+        logger.info("stream.resumed", { matchId, fixtureId });
+        res.json({ matchId, status: "active" });
+      } catch (error) {
+        logger.error("stream.error", { matchId, error: error instanceof Error ? error.message : String(error) });
+        res.status(503).json({ error: "Failed to reconnect to TxLINE stream" });
+      }
+    } catch (error) {
+      next(error);
+    }
+  });
+  app.get("/stream/status", (_req, res) => {
+    const matches = store.listMatches();
+    const streams = matches
+      .filter((m) => m.oddsSource === "txline")
+      .map((m) => ({
+        matchId: m.id,
+        fixtureId: store.getFixtureId(m.id),
+        status: store.getStreamStatus(m.id),
+      }));
+    res.json({
+      connected: txlineStream?.isConnected() ?? false,
+      activeFixtures: txlineStream?.getActiveFixtures() ?? [],
+      streams,
+    });
+  });
 
   app.use((error, _req, res, _next) => {
     store.recordError(error);
@@ -83,40 +263,92 @@ export function createApp({
 }
 
 export function createRuntime(env = process.env) {
-  const config = loadConfig(env);
-  const connection = createConnection(config.rpcUrl);
-  const authority = loadKeypair(config.keypairPath);
-  const store = createStore(config.matches);
+  const config = AppConfig.getInstance(env);
+  const connection = createConnection(config.solana.rpcUrl);
+  const authority = loadKeypair(config.solana.keypairPath);
+  const store = createStore();
+
+  const txlineClient = createTxlineClient(config.txline);
+  const txlineStream = createTxlineStream({
+    ...config.txline,
+    onDisconnect: () => {
+      const matches = store.listMatches();
+      for (const match of matches) {
+        if (store.getStreamStatus(match.id) === "active") {
+          store.setStreamStatus(match.id, "paused");
+          defaultLogger.error("stream.error", { matchId: match.id, reason: "sse_disconnected" });
+        }
+      }
+    },
+  });
+
+  const syncMatches = async () => {
+    const all = await fetchOpenMatches(connection);
+    const matches = all.filter((m) => m.authority === authority.publicKey.toBase58());
+    store.replaceMatches(matches);
+    return matches;
+  };
+
   const poller = createOddsPoller({
     store,
-    intervalMs: config.pollIntervalMs,
+    intervalMs: config.solana.pollIntervalMs,
     logger: defaultLogger,
+    syncMatches,
     sendUpdateOdds: (matchId, odds) => sendUpdateOdds(connection, authority, matchId, odds),
   });
+
   const settlementWorker = createSettlementWorker({
     store,
     logger: defaultLogger,
     fetchOpenBets: () => fetchOpenBets(connection),
     settleBet: (bet, oddsAtExpiryHome) =>
-      sendSettleBet(connection, authority, config.mint, bet, oddsAtExpiryHome),
+      sendSettleBet(connection, authority, config.solana.mint, bet, oddsAtExpiryHome),
   });
 
   const healthCheck = () => getRuntimeHealth({ config, connection, authority, store });
 
-  return { config, store, poller, settlementWorker, healthCheck };
+  const initialize = () => syncMatches();
+
+  const createMatch = (matchId, odds, tag = "") => sendUpdateOdds(connection, authority, matchId, odds, tag);
+  const closeMatch = (matchId) => sendSetMatchStatus(connection, authority, matchId, 1);
+
+  return { config, store, poller, settlementWorker, txlineClient, txlineStream, createMatch, closeMatch, healthCheck, initialize };
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const runtime = createRuntime();
-  const app = createApp(runtime);
-  app.listen(runtime.config.port, () => {
-    defaultLogger.info("server.start", {
-      port: runtime.config.port,
-      rpcUrl: runtime.config.rpcUrl,
-      pollIntervalMs: runtime.config.pollIntervalMs,
-      matches: runtime.config.matches.map((match) => match.id),
+  try {
+    const runtime = createRuntime();
+    const app = createApp(runtime);
+    defaultLogger.info("app.started", {
+      port: runtime.config.backend.port,
+      rpcUrl: runtime.config.solana.rpcUrl,
+      txlineEnabled: !!runtime.txlineClient,
     });
-  });
+    runtime
+      .initialize()
+      .catch((error) => {
+        runtime.store.recordError(error);
+        defaultLogger.error("error.fatal", { context: "initialize", message: error instanceof Error ? error.message : String(error) });
+        return [];
+      })
+      .then((matches) => {
+        runtime.poller.start();
+        app.listen(runtime.config.backend.port, () => {
+          defaultLogger.info("app.started", {
+            port: runtime.config.backend.port,
+            rpcUrl: runtime.config.solana.rpcUrl,
+            pollIntervalMs: runtime.config.solana.pollIntervalMs,
+            matches: matches.map((m) => m.id),
+          });
+        });
+      });
+  } catch (error) {
+    defaultLogger.error("error.fatal", {
+      context: "startup",
+      message: error instanceof Error ? error.message : String(error),
+    });
+    process.exit(1);
+  }
 }
 
 async function getRuntimeHealth({ config, connection, authority, store }) {
@@ -142,7 +374,7 @@ async function getRuntimeHealth({ config, connection, authority, store }) {
       backend,
       blockchain: {
         status: "online",
-        rpcUrl: config.rpcUrl,
+        rpcUrl: config.solana.rpcUrl,
         version: version["solana-core"] ?? "unknown",
         latestBlockhash: latestBlockhash.blockhash,
         authority: authority.publicKey.toBase58(),
@@ -161,7 +393,7 @@ async function getRuntimeHealth({ config, connection, authority, store }) {
       backend,
       blockchain: {
         status: "offline",
-        rpcUrl: config.rpcUrl,
+        rpcUrl: config.solana.rpcUrl,
         error: error instanceof Error ? error.message : String(error),
         authority: authority.publicKey.toBase58(),
         oracleProgram: ORACLE_PROGRAM_ID.toBase58(),

@@ -1,23 +1,21 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createOddsPoller, nextGeneratedOdds } from "../src/oddsPoller.js";
+import { createOddsPoller } from "../src/oddsPoller.js";
 import { createStore } from "../src/store.js";
 
-test("nextGeneratedOdds keeps odds normalized to 10000", () => {
-  assert.deepEqual(nextGeneratedOdds({ home: 6500, away: 3000, draw: 500 }), {
-    home: 6600,
-    away: 2900,
-    draw: 500,
-  });
-});
-
-test("odds poller sends one update_odds tx per configured match", async () => {
+test("odds poller sends update_odds only for active stream matches", async () => {
   const sent = [];
   const logs = [];
-  const store = createStore([{ id: "match_1", odds: { home: 6500, away: 3000, draw: 500 } }]);
+  const store = createStore();
+
+  store.replaceMatches([{ id: "match_1", odds: { home: 6500, away: 3000, draw: 500 }, oddsSource: "txline" }]);
+  store.setStreamStatus("match_1", "active");
+  store.setLatestOdds("match_1", { home: 1850, away: 2100, draw: 3200 });
+
   const poller = createOddsPoller({
     store,
     logger: { info: (event, details) => logs.push({ event, details }), error() {} },
+    syncMatches: async () => store.listMatches(),
     sendUpdateOdds: async (matchId, odds) => {
       sent.push({ matchId, odds });
       return `sig_${matchId}`;
@@ -26,13 +24,57 @@ test("odds poller sends one update_odds tx per configured match", async () => {
 
   await poller.runOnce();
 
-  assert.deepEqual(sent, [{ matchId: "match_1", odds: { home: 6600, away: 2900, draw: 500 } }]);
-  assert.equal(store.status.matches[0].odds.home, 6600);
-  assert.equal(store.status.txs[0].signature, "sig_match_1");
-  assert.deepEqual(logs.map((log) => log.event), [
-    "poller.run.start",
-    "poller.match.update",
-    "poller.match.updated",
-    "poller.run.done",
+  assert.deepEqual(sent, [{ matchId: "match_1", odds: { home: 1850, away: 2100, draw: 3200 } }]);
+  assert.equal(store.status.matches[0].odds.home, 1850);
+  assert.deepEqual(logs.map((log) => log.event), ["oracle.updated"]);
+});
+
+test("odds poller skips inactive matches", async () => {
+  const sent = [];
+  const store = createStore();
+
+  store.replaceMatches([
+    { id: "match_1", odds: { home: 6500, away: 3000, draw: 500 }, oddsSource: "txline" },
+    { id: "match_2", odds: { home: 6400, away: 3100, draw: 500 }, oddsSource: "txline" },
   ]);
+  store.setStreamStatus("match_1", "active");
+  store.setLatestOdds("match_1", { home: 1850, away: 2100, draw: 3200 });
+  store.setStreamStatus("match_2", "inactive");
+  store.setLatestOdds("match_2", { home: 2000, away: 2000, draw: 3000 });
+
+  const poller = createOddsPoller({
+    store,
+    logger: { info() {}, error() {} },
+    syncMatches: async () => store.listMatches(),
+    sendUpdateOdds: async (matchId, odds) => {
+      sent.push({ matchId, odds });
+      return `sig_${matchId}`;
+    },
+  });
+
+  await poller.runOnce();
+
+  assert.deepEqual(sent, [{ matchId: "match_1", odds: { home: 1850, away: 2100, draw: 3200 } }]);
+});
+
+test("odds poller skips matches without latestOdds", async () => {
+  const sent = [];
+  const store = createStore();
+
+  store.replaceMatches([{ id: "match_1", odds: { home: 6500, away: 3000, draw: 500 }, oddsSource: "txline" }]);
+  store.setStreamStatus("match_1", "active");
+
+  const poller = createOddsPoller({
+    store,
+    logger: { info() {}, error() {} },
+    syncMatches: async () => store.listMatches(),
+    sendUpdateOdds: async (matchId, odds) => {
+      sent.push({ matchId, odds });
+      return `sig_${matchId}`;
+    },
+  });
+
+  await poller.runOnce();
+
+  assert.deepEqual(sent, []);
 });
