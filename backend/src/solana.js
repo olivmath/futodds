@@ -15,6 +15,7 @@ export const BETTING_PROGRAM_ID = new PublicKey(
 );
 export const TOKEN_PROGRAM_ID = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
 export const ASSOCIATED_TOKEN_PROGRAM_ID = new PublicKey("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
+export const MATCH_ACCOUNT_SIZE = 96;
 export const BET_ACCOUNT_SIZE = 157;
 
 const UPDATE_ODDS_DISCRIMINATOR = Uint8Array.from([185, 97, 196, 202, 171, 32, 3, 160]);
@@ -40,9 +41,16 @@ export function deriveBetPda(matchId, user, nonce) {
   )[0];
 }
 
+export function derivePoolPda(matchId) {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from("pool"), Buffer.from(matchId)],
+    BETTING_PROGRAM_ID,
+  )[0];
+}
+
 export function deriveVaultAuthorityPda(matchId) {
   return PublicKey.findProgramAddressSync(
-    [Buffer.from("escrow"), Buffer.from(matchId)],
+    [Buffer.from("vault"), Buffer.from(matchId)],
     BETTING_PROGRAM_ID,
   )[0];
 }
@@ -75,6 +83,7 @@ export function buildSettleBetInstruction(authority, bet, mint, oddsAtExpiryHome
     keys: [
       { pubkey: authority.publicKey ?? new PublicKey(authority), isSigner: true, isWritable: false },
       { pubkey: deriveBetPda(bet.matchId, user, bet.nonce), isSigner: false, isWritable: true },
+      { pubkey: derivePoolPda(bet.matchId), isSigner: false, isWritable: true },
       { pubkey: vaultAuthority, isSigner: false, isWritable: false },
       { pubkey: deriveAssociatedTokenAddress(vaultAuthority, mint), isSigner: false, isWritable: true },
       { pubkey: deriveAssociatedTokenAddress(user, mint), isSigner: false, isWritable: true },
@@ -112,6 +121,49 @@ export async function fetchOpenBets(connection) {
   return accounts
     .map(({ pubkey, account }) => ({ pubkey: pubkey.toBase58(), ...decodeBetAccount(account.data) }))
     .filter((bet) => bet.status === 0);
+}
+
+export async function fetchOpenMatches(connection) {
+  const accounts = await connection.getProgramAccounts(ORACLE_PROGRAM_ID, {
+    commitment: "confirmed",
+    filters: [{ dataSize: MATCH_ACCOUNT_SIZE }],
+  });
+
+  return accounts
+    .map(({ pubkey, account }) => ({ pubkey: pubkey.toBase58(), ...decodeMatchAccount(account.data) }))
+    .filter((match) => match.status === 0);
+}
+
+export function decodeMatchAccount(data) {
+  const buffer = Buffer.from(data);
+  let offset = 8;
+
+  const authority = new PublicKey(buffer.subarray(offset, offset + 32)).toBase58();
+  offset += 32;
+  const matchIdLength = buffer.readUInt32LE(offset);
+  offset += 4;
+  const matchId = buffer.subarray(offset, offset + matchIdLength).toString("utf8");
+  offset += matchIdLength;
+  const oddsHome = buffer.readUInt16LE(offset);
+  offset += 2;
+  const oddsAway = buffer.readUInt16LE(offset);
+  offset += 2;
+  const oddsDraw = buffer.readUInt16LE(offset);
+  offset += 2;
+  const updatedAt = buffer.readBigInt64LE(offset);
+  offset += 8;
+  const status = buffer.readUInt8(offset);
+  offset += 1;
+  const bump = buffer.readUInt8(offset);
+
+  return {
+    authority,
+    id: matchId,
+    odds: { home: oddsHome, away: oddsAway, draw: oddsDraw },
+    updatedAt: updatedAt.toString(),
+    status,
+    bump,
+  };
 }
 
 export function decodeBetAccount(data) {
