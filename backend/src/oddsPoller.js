@@ -17,11 +17,10 @@ export function createOddsPoller({
       const matches = store.listMatches();
 
       for (const match of matches) {
-        const streamStatus = store.getStreamStatus(match.id);
-        if (streamStatus !== "active") continue;
+        if (match.oddsSource === "txline-realtime") continue;
 
         let odds = store.getLatestOdds(match.id);
-        if (!odds && match.oddsSource === "random") {
+        if (match.oddsSource === "random") {
           odds = generateRandomOdds(match.odds);
           store.setLatestOdds(match.id, odds);
         }

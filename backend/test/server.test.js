@@ -153,13 +153,13 @@ test("backend API registers per-match odds source metadata", async () => {
     const response = await fetch(`http://127.0.0.1:${address.port}/matches/17588229/source`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ oddsSource: "txline" }),
+      body: JSON.stringify({ oddsSource: "txline-polling" }),
     });
 
     assert.equal(response.status, 200);
-    assert.equal((await response.json()).oddsSource, "txline");
+    assert.equal((await response.json()).oddsSource, "txline-polling");
     store.replaceMatches([{ id: "17588229", odds: { home: 6500, away: 3000, draw: 500 }, status: 0 }]);
-    assert.equal(store.getMatch("17588229")?.oddsSource, "txline");
+    assert.equal(store.getMatch("17588229")?.oddsSource, "txline-polling");
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }

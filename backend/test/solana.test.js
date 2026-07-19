@@ -248,7 +248,6 @@ function buildMatchAccountData({
   odds = { home: 6500, away: 3000, draw: 500 },
   updatedAt = 1_700_000_000,
   status,
-  oddsSource = 0,
 }) {
   return Buffer.concat([
     Buffer.alloc(8),
@@ -260,7 +259,6 @@ function buildMatchAccountData({
     writeU16(odds.draw),
     writeI64(BigInt(updatedAt)),
     Buffer.from([status]),
-    Buffer.from([oddsSource]),
     Buffer.from([255]),
   ]);
 }

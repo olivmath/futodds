@@ -8,7 +8,7 @@ test("odds poller sends update_odds only for active stream matches", async () =>
   const logs = [];
   const store = createStore();
 
-  store.replaceMatches([{ id: "match_1", odds: { home: 6500, away: 3000, draw: 500 }, oddsSource: "txline" }]);
+  store.replaceMatches([{ id: "match_1", odds: { home: 6500, away: 3000, draw: 500 }, oddsSource: "txline-polling" }]);
   store.setStreamStatus("match_1", "active");
   store.setLatestOdds("match_1", { home: 1850, away: 2100, draw: 3200 });
 
@@ -29,17 +29,15 @@ test("odds poller sends update_odds only for active stream matches", async () =>
   assert.deepEqual(logs.map((log) => log.event), ["oracle.updated"]);
 });
 
-test("odds poller skips inactive matches", async () => {
+test("odds poller skips txline-realtime matches", async () => {
   const sent = [];
   const store = createStore();
 
   store.replaceMatches([
-    { id: "match_1", odds: { home: 6500, away: 3000, draw: 500 }, oddsSource: "txline" },
-    { id: "match_2", odds: { home: 6400, away: 3100, draw: 500 }, oddsSource: "txline" },
+    { id: "match_1", odds: { home: 6500, away: 3000, draw: 500 }, oddsSource: "txline-polling" },
+    { id: "match_2", odds: { home: 6400, away: 3100, draw: 500 }, oddsSource: "txline-realtime" },
   ]);
-  store.setStreamStatus("match_1", "active");
   store.setLatestOdds("match_1", { home: 1850, away: 2100, draw: 3200 });
-  store.setStreamStatus("match_2", "inactive");
   store.setLatestOdds("match_2", { home: 2000, away: 2000, draw: 3000 });
 
   const poller = createOddsPoller({
@@ -61,7 +59,7 @@ test("odds poller skips matches without latestOdds", async () => {
   const sent = [];
   const store = createStore();
 
-  store.replaceMatches([{ id: "match_1", odds: { home: 6500, away: 3000, draw: 500 }, oddsSource: "txline" }]);
+  store.replaceMatches([{ id: "match_1", odds: { home: 6500, away: 3000, draw: 500 }, oddsSource: "txline-polling" }]);
   store.setStreamStatus("match_1", "active");
 
   const poller = createOddsPoller({

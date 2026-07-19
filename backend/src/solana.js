@@ -15,7 +15,7 @@ export const BETTING_PROGRAM_ID = new PublicKey(
 );
 export const TOKEN_PROGRAM_ID = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
 export const ASSOCIATED_TOKEN_PROGRAM_ID = new PublicKey("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
-export const MATCH_ACCOUNT_SIZE = 165;
+export const MATCH_ACCOUNT_SIZE = 164;
 export const BET_ACCOUNT_SIZE = 157;
 
 const UPDATE_ODDS_DISCRIMINATOR = Uint8Array.from([185, 97, 196, 202, 171, 32, 3, 160]);
@@ -68,8 +68,8 @@ export function deriveAssociatedTokenAddress(owner, mint) {
   )[0];
 }
 
-export function buildUpdateOddsInstruction(authority, matchId, odds, tag = "", oddsSource = 0) {
-  const data = encodeUpdateOddsData(matchId, odds, tag, oddsSource);
+export function buildUpdateOddsInstruction(authority, matchId, odds, tag = "") {
+  const data = encodeUpdateOddsData(matchId, odds, tag);
   return new TransactionInstruction({
     programId: ORACLE_PROGRAM_ID,
     keys: [
@@ -100,10 +100,10 @@ export function buildSettleBetInstruction(authority, bet, mint, oddsAtExpiryHome
   });
 }
 
-export async function sendUpdateOdds(connection, authority, matchId, odds, tag = "", oddsSource = 0) {
+export async function sendUpdateOdds(connection, authority, matchId, odds, tag = "") {
   return sendAndConfirmTransaction(
     connection,
-    new Transaction().add(buildUpdateOddsInstruction(authority, matchId, odds, tag, oddsSource)),
+    new Transaction().add(buildUpdateOddsInstruction(authority, matchId, odds, tag)),
     [authority],
     { commitment: "confirmed" },
   );
@@ -195,8 +195,6 @@ export function decodeMatchAccount(data) {
   offset += 8;
   const status = buffer.readUInt8(offset);
   offset += 1;
-  const oddsSource = buffer.readUInt8(offset);
-  offset += 1;
   const bump = buffer.readUInt8(offset);
 
   return {
@@ -206,8 +204,6 @@ export function decodeMatchAccount(data) {
     odds: { home: oddsHome, away: oddsAway, draw: oddsDraw },
     updatedAt: updatedAt.toString(),
     status,
-    oddsSource,
-    oddsSourceLabel: oddsSource === 0 ? "random" : "txline",
     bump,
   };
 }
@@ -359,10 +355,10 @@ function startsWithBytes(buffer, prefix) {
   return prefix.every((byte, index) => buffer[index] === byte);
 }
 
-function encodeUpdateOddsData(matchId, odds, tag = "", oddsSource = 0) {
+function encodeUpdateOddsData(matchId, odds, tag = "") {
   const matchBytes = Buffer.from(matchId, "utf8");
   const tagBytes = Buffer.from(tag, "utf8");
-  const data = Buffer.alloc(8 + 4 + matchBytes.length + 6 + 4 + tagBytes.length + 1);
+  const data = Buffer.alloc(8 + 4 + matchBytes.length + 6 + 4 + tagBytes.length);
   let offset = 0;
   Buffer.from(UPDATE_ODDS_DISCRIMINATOR).copy(data, offset);
   offset += 8;
@@ -379,8 +375,6 @@ function encodeUpdateOddsData(matchId, odds, tag = "", oddsSource = 0) {
   data.writeUInt32LE(tagBytes.length, offset);
   offset += 4;
   tagBytes.copy(data, offset);
-  offset += tagBytes.length;
-  data.writeUInt8(oddsSource, offset);
   return data;
 }
 

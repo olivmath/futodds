@@ -32,7 +32,6 @@ export type GameOnChainMatch = {
   oddsHome: number;
   oddsAway: number;
   oddsDraw: number;
-  oddsSource: number;
   updatedAt: bigint;
 };
 
@@ -140,7 +139,7 @@ export type CreateGameFormResult =
   | { ok: true; matchId: string; oddsSource: OddsSource; odds: { home: number; away: number; draw: number } }
   | { ok: false; error: string };
 
-export type OddsSource = "random" | "txline";
+export type OddsSource = "random" | "txline-polling" | "txline-realtime";
 
 export type PlaceBetFormInput = {
   matchId: string;
@@ -208,7 +207,7 @@ export function buildGameRows(input: {
       backendUpdatedAt: backend?.updatedAt ?? null,
       totalStaked,
       openBets,
-      oddsSource: chain?.oddsSource === 1 ? "txline" : backend?.oddsSource ?? "random",
+      oddsSource: backend?.oddsSource ?? "random",
       source: chain && backend ? "backend+chain" : chain ? "chain" : "backend",
     };
   });
@@ -315,17 +314,20 @@ export function currentOddsBars(odds: { home: number; away: number; draw: number
 }
 
 export function parseCreateGameForm(input: CreateGameFormInput): CreateGameFormResult {
-  if (input.oddsSource !== "random" && input.oddsSource !== "txline") {
-    return { ok: false, error: "Escolha TxLINE ou random." };
+  const validSources: OddsSource[] = ["random", "txline-polling", "txline-realtime"];
+  if (!validSources.includes(input.oddsSource as OddsSource)) {
+    return { ok: false, error: "Escolha random, txline-polling ou txline-realtime." };
   }
+  const oddsSource = input.oddsSource as OddsSource;
 
-  if (input.oddsSource === "txline") {
+  if (oddsSource.startsWith("txline")) {
     const matchId = input.matchId.trim();
     if (!matchId) return { ok: false, error: "Selecione uma fixture TxLINE." };
-    return { ok: true, matchId, oddsSource: "txline", odds: { home: 3334, away: 3333, draw: 3333 } };
+    return { ok: true, matchId, oddsSource, odds: { home: 3334, away: 3333, draw: 3333 } };
   }
 
-  const matchId = `game_${Date.now().toString(36)}`;
+  const matchId = input.matchId.trim();
+  if (!matchId) return { ok: false, error: "Informe o ID do jogo." };
 
   const home = parseBasisPoints(input.home);
   const away = parseBasisPoints(input.away);
@@ -338,7 +340,7 @@ export function parseCreateGameForm(input: CreateGameFormInput): CreateGameFormR
     return { ok: false, error: "As odds precisam somar 10000." };
   }
 
-  return { ok: true, matchId, oddsSource: input.oddsSource, odds: { home, away, draw } };
+  return { ok: true, matchId, oddsSource, odds: { home, away, draw } };
 }
 
 export function parsePlaceBetForm(input: PlaceBetFormInput): PlaceBetFormResult {

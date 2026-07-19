@@ -27,7 +27,7 @@ describe("solana backoffice helpers", () => {
     expect(DEFAULT_BETTING_PROGRAM_ID.toBase58()).toBe("GoccKzkMS5BWRmrbLdGKzqKUUcksZB3DftW82F7boCoQ");
     expect(ORACLE_PROGRAM_ID.toBase58()).toMatch(/^[1-9A-HJ-NP-Za-km-z]+$/);
     expect(BETTING_PROGRAM_ID.toBase58()).toMatch(/^[1-9A-HJ-NP-Za-km-z]+$/);
-    expect(MATCH_ACCOUNT_SIZE).toBe(165);
+    expect(MATCH_ACCOUNT_SIZE).toBe(164);
   });
 
   it("resolves localnet browser configuration from Vite env", () => {
@@ -109,8 +109,6 @@ describe("solana backoffice helpers", () => {
     offset += 8;
     data.writeUInt8(1, offset);
     offset += 1;
-    data.writeUInt8(1, offset);
-    offset += 1;
     data.writeUInt8(254, offset);
 
     expect(decodeMatchAccount(data)).toMatchObject({
@@ -121,7 +119,6 @@ describe("solana backoffice helpers", () => {
       oddsDraw: 500,
       updatedAt: 123n,
       status: 1,
-      oddsSource: 1,
       bump: 254,
     });
   });

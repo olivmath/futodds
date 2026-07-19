@@ -51,7 +51,7 @@ export function createStore() {
       state.matches = matches.map((match) => ({
         ...match,
         odds: { ...match.odds },
-        oddsSource: match.oddsSourceLabel ?? state.matchSources.get(match.id) ?? currentById.get(match.id)?.oddsSource ?? "random",
+        oddsSource: state.matchSources.get(match.id) ?? match.oddsSource ?? currentById.get(match.id)?.oddsSource ?? "random",
         fixtureId: state.matchFixtures.get(match.id),
         streamStatus: state.matchStreamStatus.get(match.id) ?? "inactive",
       }));

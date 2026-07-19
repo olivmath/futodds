@@ -66,7 +66,7 @@ fn build_update_odds_ix_with_tag(
     )
 }
 
-fn build_set_match_status_ix(authority: &Keypair, match_id: &str, status: u8) -> Instruction {
+fn build_set_match_status_ix(authority: &Keypair, match_id: &str, status: oracle_adapter::MatchStatus) -> Instruction {
     let program_id = oracle_adapter::id();
     let match_account =
         Pubkey::find_program_address(&[b"match", match_id.as_bytes()], &program_id).0;
@@ -135,7 +135,7 @@ fn test_create_match_with_initial_odds() {
     assert_eq!(match_state.odds_draw, 500);
     assert_eq!(match_state.match_id, match_id);
     assert_eq!(match_state.authority, payer.pubkey());
-    assert_eq!(match_state.status, 0);
+    assert_eq!(match_state.status, oracle_adapter::MatchStatus::Open);
 }
 
 #[test]
@@ -161,7 +161,7 @@ fn test_update_existing_odds() {
     assert_eq!(match_state.odds_home, 6700);
     assert_eq!(match_state.odds_away, 2800);
     assert_eq!(match_state.odds_draw, 500);
-    assert_eq!(match_state.status, 0);
+    assert_eq!(match_state.status, oracle_adapter::MatchStatus::Open);
 }
 
 #[test]
@@ -172,7 +172,7 @@ fn test_authority_can_close_match() {
     let ix = build_update_odds_ix(&payer, match_id, 6500, 3000, 500);
     send_tx(&mut svm, ix, &payer).expect("create match");
 
-    let ix = build_set_match_status_ix(&payer, match_id, 1);
+    let ix = build_set_match_status_ix(&payer, match_id, oracle_adapter::MatchStatus::Closed);
     send_tx(&mut svm, ix, &payer).expect("close match");
 
     let program_id = oracle_adapter::id();
@@ -181,7 +181,7 @@ fn test_authority_can_close_match() {
     let mut data: &[u8] = &account.data;
     let match_state = MatchAccount::try_deserialize(&mut data).unwrap();
 
-    assert_eq!(match_state.status, 1);
+    assert_eq!(match_state.status, oracle_adapter::MatchStatus::Closed);
 }
 
 #[test]
@@ -192,7 +192,28 @@ fn test_reject_invalid_match_status() {
     let ix = build_update_odds_ix(&payer, match_id, 6500, 3000, 500);
     send_tx(&mut svm, ix, &payer).expect("create match");
 
-    let ix = build_set_match_status_ix(&payer, match_id, 2);
+    // Build raw instruction with invalid status byte (2) to bypass enum typing
+    let program_id = oracle_adapter::id();
+    let match_account =
+        Pubkey::find_program_address(&[b"match", match_id.as_bytes()], &program_id).0;
+    let mut data = anchor_lang::InstructionData::data(
+        &oracle_adapter::instruction::SetMatchStatus {
+            match_id: match_id.to_string(),
+            status: oracle_adapter::MatchStatus::Closed,
+        },
+    );
+    // Overwrite the last byte (status enum) with invalid value 2
+    let len = data.len();
+    data[len - 1] = 2;
+    let ix = Instruction::new_with_bytes(
+        program_id,
+        &data,
+        oracle_adapter::accounts::SetMatchStatus {
+            authority: payer.pubkey(),
+            match_account,
+        }
+        .to_account_metas(None),
+    );
     let res = send_tx(&mut svm, ix, &payer);
 
     assert!(

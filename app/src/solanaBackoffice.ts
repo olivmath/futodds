@@ -14,7 +14,7 @@ export const ASSOCIATED_TOKEN_PROGRAM_ID = new PublicKey("ATokenGPvbdGVxr1b2hvZb
 export const TEST_USDC_MINT = new PublicKey("CDAQWBQ3DciCWQDtyczAWvTp3xuyuL2t273LSdffjxB");
 export const TESTNET_RPC_URL = "https://api.testnet.solana.com";
 export const DEFAULT_BACKEND_URL = "http://localhost:8787";
-export const MATCH_ACCOUNT_SIZE = 165;
+export const MATCH_ACCOUNT_SIZE = 164;
 export const BET_ACCOUNT_SIZE = 157;
 
 const UPDATE_ODDS_DISCRIMINATOR = Uint8Array.from([185, 97, 196, 202, 171, 32, 3, 160]);
@@ -42,7 +42,6 @@ export type MatchAccount = {
   oddsDraw: number;
   updatedAt: bigint;
   status: number;
-  oddsSource: number;
   bump: number;
 };
 
@@ -174,10 +173,10 @@ export function deriveAssociatedTokenAddress(owner: PublicKey, mint: PublicKey):
   )[0];
 }
 
-export function encodeUpdateOddsData(matchId: string, odds: OddsInput, tag = "", oddsSource = 0): Buffer {
+export function encodeUpdateOddsData(matchId: string, odds: OddsInput, tag = ""): Buffer {
   const matchBytes = Buffer.from(matchId, "utf8");
   const tagBytes = Buffer.from(tag, "utf8");
-  const data = Buffer.alloc(8 + 4 + matchBytes.length + 6 + 4 + tagBytes.length + 1);
+  const data = Buffer.alloc(8 + 4 + matchBytes.length + 6 + 4 + tagBytes.length);
   let offset = 0;
   Buffer.from(UPDATE_ODDS_DISCRIMINATOR).copy(data, offset);
   offset += 8;
@@ -194,8 +193,6 @@ export function encodeUpdateOddsData(matchId: string, odds: OddsInput, tag = "",
   data.writeUInt32LE(tagBytes.length, offset);
   offset += 4;
   tagBytes.copy(data, offset);
-  offset += tagBytes.length;
-  data.writeUInt8(oddsSource, offset);
   return data;
 }
 
@@ -403,10 +400,8 @@ export function decodeMatchAccount(data: Buffer | Uint8Array): MatchAccount {
   offset += 8;
   const status = buffer.readUInt8(offset);
   offset += 1;
-  const oddsSource = buffer.readUInt8(offset);
-  offset += 1;
   const bump = buffer.readUInt8(offset);
-  return { authority, matchId, tag, oddsHome, oddsAway, oddsDraw, updatedAt, status, oddsSource, bump };
+  return { authority, matchId, tag, oddsHome, oddsAway, oddsDraw, updatedAt, status, bump };
 }
 
 export function decodeBetAccount(data: Buffer | Uint8Array): BetAccount {

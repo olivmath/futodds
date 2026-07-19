@@ -11,7 +11,7 @@ vi.mock("@solana/web3.js", () => ({
 test("renders dashboard title when match found", () => {
   const mockMatch = {
     pda: "match-pda",
-    account: { matchId: "test-match", oddsHome: 6500, oddsAway: 3000, oddsDraw: 500, status: 0, oddsSource: 0 },
+    account: { matchId: "test-match", oddsHome: 6500, oddsAway: 3000, oddsDraw: 500, status: 0 },
   };
   const mockConnection = {
     onLogs: vi.fn().mockReturnValue(1),

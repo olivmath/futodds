@@ -28,7 +28,7 @@ export function GameAdminTab({
 }) {
   const match = chainMatches.find((m) => m.account?.matchId === matchId);
   const matchBets = bets.filter((b) => b.account?.matchId === matchId);
-  const isTxline = match?.account?.oddsSource === 1;
+  const isTxline = false; // oddsSource removed from chain; controlled via backend now
 
   const [score, setScore] = useState({ home: 0, away: 0 });
   const [oddsSeries, setOddsSeries] = useState<any[]>([]);

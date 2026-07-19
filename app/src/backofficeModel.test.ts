@@ -34,7 +34,7 @@ describe("backoffice model", () => {
   it("builds game rows with backend, on-chain and staked totals", () => {
     const rows = buildGameRows({
       backendMatches: [
-        { id: "match_1", oddsSource: "txline", odds: { home: 6500, away: 3000, draw: 500 }, updatedAt: "2026-07-19T12:00:00.000Z" },
+        { id: "match_1", oddsSource: "txline-polling", odds: { home: 6500, away: 3000, draw: 500 }, updatedAt: "2026-07-19T12:00:00.000Z" },
         { id: "match_2", oddsSource: "random", odds: { home: 5200, away: 4100, draw: 700 } },
       ],
       onChainMatches: [
@@ -45,7 +45,6 @@ describe("backoffice model", () => {
           oddsHome: 6600,
           oddsAway: 2900,
           oddsDraw: 500,
-          oddsSource: 1,
           updatedAt: 1_700_000_000n,
         },
       ],
@@ -68,7 +67,7 @@ describe("backoffice model", () => {
         backendUpdatedAt: "2026-07-19T12:00:00.000Z",
         totalStaked: 3_500_000n,
         openBets: 1,
-        oddsSource: "txline",
+        oddsSource: "txline-polling",
         source: "backend+chain",
       },
       {
@@ -166,10 +165,10 @@ describe("backoffice model", () => {
   });
 
   it("txline source uses placeholder odds and skips bps validation", () => {
-    expect(parseCreateGameForm({ matchId: "18182808", oddsSource: "txline", home: "", away: "", draw: "" })).toEqual({
+    expect(parseCreateGameForm({ matchId: "18182808", oddsSource: "txline-polling", home: "", away: "", draw: "" })).toEqual({
       ok: true,
       matchId: "18182808",
-      oddsSource: "txline",
+      oddsSource: "txline-polling",
       odds: { home: 3334, away: 3333, draw: 3333 },
     });
   });
@@ -185,7 +184,7 @@ describe("backoffice model", () => {
     });
     expect(parseCreateGameForm({ matchId: "match_3", oddsSource: "manual", home: "9000", away: "500", draw: "500" })).toEqual({
       ok: false,
-      error: "Escolha TxLINE ou random.",
+      error: "Escolha random, txline-polling ou txline-realtime.",
     });
     expect(parseCreateGameForm({ matchId: "match_3", oddsSource: "random", home: "abc", away: "500", draw: "500" })).toEqual({
       ok: false,

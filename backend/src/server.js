@@ -63,8 +63,9 @@ export function createApp({
   app.get("/matches", (_req, res) => res.json(store.listMatches()));
   app.post("/matches/:matchId/source", (req, res) => {
     const oddsSource = req.body?.oddsSource;
-    if (oddsSource !== "random" && oddsSource !== "txline") {
-      res.status(400).json({ error: "oddsSource must be random or txline" });
+    const validSources = ["random", "txline-polling", "txline-realtime"];
+    if (!validSources.includes(oddsSource)) {
+      res.status(400).json({ error: `oddsSource must be one of: ${validSources.join(", ")}` });
       return;
     }
     store.setMatchOddsSource(req.params.matchId, oddsSource);
@@ -90,20 +91,21 @@ export function createApp({
     try {
       const matchId = req.body?.matchId;
       const tag = req.body?.tag ?? "";
-      const oddsSource = req.body?.oddsSource ?? "txline";
+      const oddsSource = req.body?.oddsSource ?? "txline-polling";
+      const validSources = ["random", "txline-polling", "txline-realtime"];
       if (!matchId || typeof matchId !== "string") {
         res.status(400).json({ error: "matchId is required" });
         return;
       }
-      if (oddsSource !== "random" && oddsSource !== "txline") {
-        res.status(400).json({ error: "oddsSource must be random or txline" });
+      if (!validSources.includes(oddsSource)) {
+        res.status(400).json({ error: `oddsSource must be one of: ${validSources.join(", ")}` });
         return;
       }
       if (!createMatch) {
         res.status(503).json({ error: "createMatch not available" });
         return;
       }
-      if (oddsSource === "txline") {
+      if (oddsSource.startsWith("txline")) {
         if (!txlineClient) {
           res.status(503).json({ error: "TxLINE not configured" });
           return;
@@ -116,8 +118,7 @@ export function createApp({
         }
       }
       const odds = req.body?.odds ?? { home: 3334, away: 3333, draw: 3333 };
-      const oddsSourceCode = oddsSource === "txline" ? 1 : 0;
-      const signature = await createMatch(matchId, odds, tag, oddsSourceCode);
+      const signature = await createMatch(matchId, odds, tag);
       store.setMatchOddsSource(matchId, oddsSource);
       store.recordTx({ type: "create_match", matchId, signature });
       logger.info("admin.match.create", { matchId, tag, oddsSource, signature });
@@ -384,7 +385,7 @@ export function createRuntime(env = process.env) {
 
   const initialize = () => syncMatches();
 
-  const createMatch = (matchId, odds, tag = "", oddsSource = 0) => sendUpdateOdds(connection, authority, matchId, odds, tag, oddsSource);
+  const createMatch = (matchId, odds, tag = "") => sendUpdateOdds(connection, authority, matchId, odds, tag);
   const closeMatch = (matchId) => sendSetMatchStatus(connection, authority, matchId, 1);
   const poolsMeta = {
     programId: BETTING_PROGRAM_ID.toBase58(),

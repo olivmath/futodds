@@ -13,7 +13,6 @@ pub mod oracle_adapter {
         odds_away: u16,
         odds_draw: u16,
         tag: String,
-        odds_source: OddsSource,
     ) -> Result<()> {
         require!(
             odds_home as u32 + odds_away as u32 + odds_draw as u32 == 10000,
@@ -26,9 +25,6 @@ pub mod oracle_adapter {
         match_account.match_id = match_id;
         if is_new_match || !tag.is_empty() {
             match_account.tag = tag;
-        }
-        if is_new_match || odds_source != match_account.odds_source {
-            match_account.odds_source = odds_source;
         }
         match_account.odds_home = odds_home;
         match_account.odds_away = odds_away;
@@ -46,7 +42,6 @@ pub mod oracle_adapter {
             odds_home: match_account.odds_home,
             odds_away: match_account.odds_away,
             odds_draw: match_account.odds_draw,
-            odds_source: match_account.odds_source,
             updated_at: match_account.updated_at,
         });
 
@@ -75,7 +70,6 @@ pub struct OddsUpdated {
     pub odds_home: u16,
     pub odds_away: u16,
     pub odds_draw: u16,
-    pub odds_source: OddsSource,
     pub updated_at: i64,
 }
 
@@ -125,11 +119,10 @@ pub struct MatchAccount {
     pub odds_draw: u16,
     pub updated_at: i64,
     pub status: MatchStatus,
-    pub odds_source: OddsSource,
     pub bump: u8,
 }
 
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq, InitSpace)]
 pub enum MatchStatus {
     Open,
     Closed,
@@ -141,17 +134,6 @@ impl Default for MatchStatus {
     }
 }
 
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
-pub enum OddsSource {
-    Random,
-    Txline,
-}
-
-impl Default for OddsSource {
-    fn default() -> Self {
-        OddsSource::Random
-    }
-}
 
 #[error_code]
 pub enum OracleError {

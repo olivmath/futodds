@@ -48,7 +48,7 @@ import { GameAdminTab } from "./tabs/GameAdminTab";
 
 type BackendMatch = {
   id: string;
-  oddsSource?: "random" | "txline";
+  oddsSource?: "random" | "txline-polling" | "txline-realtime";
   odds: OddsInput;
   updatedAt?: string;
 };
@@ -464,7 +464,6 @@ export default function App() {
                 updatedAt: event.updatedAt,
                 tag: existing?.account.tag ?? event.tag ?? "",
                 status: existing?.account.status ?? 0,
-                oddsSource: existing?.account.oddsSource ?? 0,
                 bump: existing?.account.bump ?? 0,
               },
             },
@@ -519,7 +518,6 @@ export default function App() {
           oddsHome: account.oddsHome,
           oddsAway: account.oddsAway,
           oddsDraw: account.oddsDraw,
-          oddsSource: account.oddsSource,
           updatedAt: account.updatedAt,
         })),
         bets: bets.map(({ account }) => ({
@@ -863,10 +861,11 @@ function CreateGamePanel({
           <span>Feed</span>
           <select value={form.oddsSource} onChange={(event) => onChange("oddsSource", event.target.value)}>
             <option value="random">Random</option>
-            <option value="txline">TxLINE</option>
+            <option value="txline-polling">TxLINE Polling</option>
+            <option value="txline-realtime">TxLINE Realtime</option>
           </select>
         </label>
-        {form.oddsSource === "txline" ? (
+        {form.oddsSource.startsWith("txline") ? (
           <TxlineFixturePicker backendUrl={backendUrl} onSelect={(fixtureId, tag) => { onChange("matchId", fixtureId); onChange("tag", tag); }} />
         ) : (
           <>
@@ -890,7 +889,7 @@ function CreateGamePanel({
         )}
       </div>
 
-      {form.oddsSource === "txline" && form.matchId ? (
+      {form.oddsSource.startsWith("txline") && form.matchId ? (
         <div className="txline-selected">Fixture: <strong>{form.tag || form.matchId}</strong></div>
       ) : null}
 
@@ -1274,8 +1273,9 @@ function SourceBadge({ source }: { source: "backend" | "chain" | "backend+chain"
   return <span className={`source-badge ${source.replace("+", "-")}`}>{label}</span>;
 }
 
-function OddsSourceBadge({ source }: { source: "random" | "txline" }) {
-  return <span className={`source-badge odds-${source}`}>{source === "txline" ? "TxLINE" : "Random"}</span>;
+function OddsSourceBadge({ source }: { source: "random" | "txline-polling" | "txline-realtime" }) {
+  const labels: Record<string, string> = { random: "Random", "txline-polling": "TxLINE Poll", "txline-realtime": "TxLINE RT" };
+  return <span className={`source-badge odds-${source}`}>{labels[source] ?? source}</span>;
 }
 
 function errorMessage(error: unknown): string {
