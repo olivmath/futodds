@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { PublicKey } from "@solana/web3.js";
 import {
+  buildUpdateOddsInstruction,
   buildSettleBetInstruction,
   decodeBetAccount,
   decodeLpPositionAccount,
@@ -67,6 +68,18 @@ test("decodeMatchAccount reads the on-chain MatchAccount layout with status", ()
   assert.deepEqual(match.odds, { home: 6500, away: 3000, draw: 500 });
   assert.equal(match.updatedAt, "1700000000");
   assert.equal(match.status, 0);
+  assert.equal(match.oddsSource, "txline-polling");
+});
+
+test("buildUpdateOddsInstruction encodes the legacy on-chain odds source", () => {
+  const authority = { publicKey: new PublicKey("He5N26TPqsKvbG1UJgj5QgVrEroz4hMjPdytMvx677AA") };
+  const odds = { home: 5000, away: 3000, draw: 2000 };
+
+  const txline = buildUpdateOddsInstruction(authority, "match_1", odds, "Game", "txline-realtime");
+  const random = buildUpdateOddsInstruction(authority, "match_1", odds, "Game", "random");
+
+  assert.equal(txline.data.at(-1), 1);
+  assert.equal(random.data.at(-1), 0);
 });
 
 test("fetchOpenMatches lists only open oracle match accounts", async () => {
@@ -248,6 +261,7 @@ function buildMatchAccountData({
   odds = { home: 6500, away: 3000, draw: 500 },
   updatedAt = 1_700_000_000,
   status,
+  oddsSource = 1,
 }) {
   return Buffer.concat([
     Buffer.alloc(8),
@@ -259,6 +273,7 @@ function buildMatchAccountData({
     writeU16(odds.draw),
     writeI64(BigInt(updatedAt)),
     Buffer.from([status]),
+    Buffer.from([oddsSource]),
     Buffer.from([255]),
   ]);
 }

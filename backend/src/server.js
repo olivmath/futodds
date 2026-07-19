@@ -118,7 +118,7 @@ export function createApp({
         }
       }
       const odds = req.body?.odds ?? { home: 3334, away: 3333, draw: 3333 };
-      const signature = await createMatch(matchId, odds, tag);
+      const signature = await createMatch(matchId, odds, tag, oddsSource);
       store.setMatchOddsSource(matchId, oddsSource);
       store.recordTx({ type: "create_match", matchId, signature });
       logger.info("admin.match.create", { matchId, tag, oddsSource, signature });
@@ -231,12 +231,12 @@ export function createApp({
         return;
       }
 
-      if (match.oddsSource === "txline") {
+      const fixtureId = store.getFixtureId(matchId) ?? matchId;
+      if (match.oddsSource === "txline-realtime") {
         if (!txlineStream) {
           res.status(503).json({ error: "TxLINE stream not configured" });
           return;
         }
-        const fixtureId = store.getFixtureId(matchId) ?? matchId;
         if (!txlineStream.isConnected()) {
           try {
             await txlineStream.connect();
@@ -369,7 +369,8 @@ export function createRuntime(env = process.env) {
     intervalMs: config.solana.pollIntervalMs,
     logger: defaultLogger,
     syncMatches,
-    sendUpdateOdds: (matchId, odds) => sendUpdateOdds(connection, authority, matchId, odds),
+    sendUpdateOdds: (matchId, odds, oddsSource) =>
+      sendUpdateOdds(connection, authority, matchId, odds, "", oddsSource),
   });
 
   const settlementWorker = createSettlementWorker({
@@ -385,7 +386,8 @@ export function createRuntime(env = process.env) {
 
   const initialize = () => syncMatches();
 
-  const createMatch = (matchId, odds, tag = "") => sendUpdateOdds(connection, authority, matchId, odds, tag);
+  const createMatch = (matchId, odds, tag = "", oddsSource = "txline-polling") =>
+    sendUpdateOdds(connection, authority, matchId, odds, tag, oddsSource);
   const closeMatch = (matchId) => sendSetMatchStatus(connection, authority, matchId, 1);
   const poolsMeta = {
     programId: BETTING_PROGRAM_ID.toBase58(),

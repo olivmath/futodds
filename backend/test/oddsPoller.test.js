@@ -16,15 +16,19 @@ test("odds poller sends update_odds only for active stream matches", async () =>
     store,
     logger: { info: (event, details) => logs.push({ event, details }), error() {} },
     syncMatches: async () => store.listMatches(),
-    sendUpdateOdds: async (matchId, odds) => {
-      sent.push({ matchId, odds });
+    sendUpdateOdds: async (matchId, odds, oddsSource) => {
+      sent.push({ matchId, odds, oddsSource });
       return `sig_${matchId}`;
     },
   });
 
   await poller.runOnce();
 
-  assert.deepEqual(sent, [{ matchId: "match_1", odds: { home: 1850, away: 2100, draw: 3200 } }]);
+  assert.deepEqual(sent, [{
+    matchId: "match_1",
+    odds: { home: 1850, away: 2100, draw: 3200 },
+    oddsSource: "txline-polling",
+  }]);
   assert.equal(store.status.matches[0].odds.home, 1850);
   assert.deepEqual(logs.map((log) => log.event), ["oracle.updated"]);
 });
@@ -44,15 +48,19 @@ test("odds poller skips txline-realtime matches", async () => {
     store,
     logger: { info() {}, error() {} },
     syncMatches: async () => store.listMatches(),
-    sendUpdateOdds: async (matchId, odds) => {
-      sent.push({ matchId, odds });
+    sendUpdateOdds: async (matchId, odds, oddsSource) => {
+      sent.push({ matchId, odds, oddsSource });
       return `sig_${matchId}`;
     },
   });
 
   await poller.runOnce();
 
-  assert.deepEqual(sent, [{ matchId: "match_1", odds: { home: 1850, away: 2100, draw: 3200 } }]);
+  assert.deepEqual(sent, [{
+    matchId: "match_1",
+    odds: { home: 1850, away: 2100, draw: 3200 },
+    oddsSource: "txline-polling",
+  }]);
 });
 
 test("odds poller skips matches without latestOdds", async () => {

@@ -27,7 +27,7 @@ export function createOddsPoller({
         if (!odds) continue;
 
         try {
-          const signature = await sendUpdateOdds(match.id, odds);
+          const signature = await sendUpdateOdds(match.id, odds, match.oddsSource);
           store.updateMatchOdds(match.id, odds);
           store.recordTx({ type: "update_odds", matchId: match.id, signature });
           logger.info("oracle.updated", { matchId: match.id, signature, odds });
