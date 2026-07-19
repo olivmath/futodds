@@ -1,15 +1,28 @@
 "use client";
 
 import { useState } from "react";
+import { Connection, PublicKey } from "@solana/web3.js";
 import {
+  availableLiquidity,
   formatUsdc,
+  fromUsdc,
   positionValue,
   sharePrice,
   sharesForDeposit,
-  unlockedRatio,
+  sharesForWithdrawAmount,
+  toUsdc,
   type LpPosition,
   type Pool,
+  type PoolsMeta,
 } from "@/lib/pools";
+import {
+  buildClaimFeesInstruction,
+  buildDepositInstruction,
+  buildWithdrawInstruction,
+  sendInstructions,
+  shortenAddress,
+  type ConnectedWallet,
+} from "@/lib/solana";
 
 type TxState =
   | { phase: "idle" }
@@ -21,22 +34,16 @@ type TxState =
 type PoolDetailProps = {
   pool: Pool;
   position?: LpPosition;
-  connected: boolean;
-  walletBalance: number;
+  meta: PoolsMeta;
+  connection: Connection | null;
+  wallet: ConnectedWallet | null;
+  walletBalance: bigint | null;
   onConnect: () => void;
-  onDeposit: (matchId: string, amount: number) => void;
-  onWithdraw: (matchId: string, shares: number) => void;
-  onClaim: (matchId: string) => void;
+  onTxConfirmed: () => void;
 };
 
 const CHIP_AMOUNTS = [100, 500, 1000];
-
-function fakeSig(): string {
-  const chars = "abcdefghjkmnpqrstuvwxyz123456789";
-  let s = "";
-  for (let i = 0; i < 8; i++) s += chars[Math.floor(Math.random() * chars.length)];
-  return `${s}…${s.split("").reverse().join("").slice(0, 4)}`;
-}
+const MIN_DEPOSIT_USDC = 1; // betting_engine::MIN_DEPOSIT_AMOUNT
 
 function TxBanner({ tx }: { tx: TxState }) {
   if (tx.phase === "idle") return null;
@@ -48,16 +55,17 @@ function TxBanner({ tx }: { tx: TxState }) {
         : "border-fg/20 text-fg-muted";
   return (
     <div className={`mt-3 rounded-xl border bg-bg/60 px-4 py-3 text-[13px] ${tone}`}>
-      {tx.phase === "building" && "Building transaction from the liquidity-pool IDL…"}
+      {tx.phase === "building" && "Building transaction — approve it in your wallet…"}
       {tx.phase === "pending" && (
         <>
-          Pending · sig <span className="num">{tx.sig}</span> · waiting for{" "}
-          <span className="num">confirmed</span>
+          Pending · sig <span className="num">{shortenAddress(tx.sig)}</span> · waiting
+          for <span className="num">confirmed</span>
         </>
       )}
       {tx.phase === "confirmed" && (
         <>
-          ✓ Confirmed · {tx.summary} · sig <span className="num">{tx.sig}</span>
+          ✓ Confirmed · {tx.summary} · sig{" "}
+          <span className="num">{shortenAddress(tx.sig)}</span>
         </>
       )}
       {tx.phase === "error" && tx.message}
@@ -68,71 +76,101 @@ function TxBanner({ tx }: { tx: TxState }) {
 export default function PoolDetail({
   pool,
   position,
-  connected,
+  meta,
+  connection,
+  wallet,
   walletBalance,
   onConnect,
-  onDeposit,
-  onWithdraw,
-  onClaim,
+  onTxConfirmed,
 }: PoolDetailProps) {
   const [tab, setTab] = useState<"deposit" | "withdraw">("deposit");
   const [amount, setAmount] = useState("");
   const [tx, setTx] = useState<TxState>({ phase: "idle" });
 
   const amountNum = Number(amount) || 0;
-  const unlocked = unlockedRatio(pool);
-  const posValue = position ? positionValue(pool, position.shares) : 0;
-  const withdrawable = posValue * unlocked;
+  const amountRaw = fromUsdc(amountNum);
+  const posValue = position ? positionValue(pool, position.shares) : 0n;
+  const pendingFees = position?.pendingFees ?? 0n;
+  const available = availableLiquidity(pool);
+  // withdraw pays principal + pending fees, both capped by unlocked liquidity
+  const withdrawCap = available > pendingFees ? available - pendingFees : 0n;
+  const withdrawable = posValue < withdrawCap ? posValue : withdrawCap;
   const depositDisabled = pool.status === "settled";
+  const balance = walletBalance ?? 0n;
 
-  const preview = amountNum > 0 ? sharesForDeposit(pool, amountNum) : 0;
+  const previewShares = amountRaw > 0n ? sharesForDeposit(pool, amountRaw) : 0n;
   const poolShareAfter =
-    amountNum > 0
-      ? ((preview + (position?.shares ?? 0)) / (pool.totalShares + preview)) * 100
+    amountRaw > 0n
+      ? (toUsdc(previewShares + (position?.shares ?? 0n)) /
+          toUsdc(pool.totalShares + previewShares)) *
+        100
       : 0;
 
-  function runTx(summary: string, apply: () => void) {
-    const sig = fakeSig();
+  const accounts = wallet
+    ? {
+        programId: new PublicKey(meta.programId),
+        owner: wallet.publicKey,
+        pool: new PublicKey(pool.pubkey),
+        matchId: pool.matchId,
+        mint: new PublicKey(pool.mint),
+        vault: new PublicKey(pool.vault),
+      }
+    : null;
+
+  async function runTx(
+    summary: string,
+    build: () => Parameters<typeof sendInstructions>[2],
+  ) {
+    if (!connection || !accounts) return;
     setTx({ phase: "building" });
-    window.setTimeout(() => setTx({ phase: "pending", sig }), 500);
-    window.setTimeout(() => {
-      apply();
+    try {
+      const sig = await sendInstructions(connection, wallet!, build(), (pending) =>
+        setTx({ phase: "pending", sig: pending }),
+      );
       setTx({ phase: "confirmed", sig, summary });
       setAmount("");
-    }, 1500);
+      onTxConfirmed();
+    } catch (error) {
+      setTx({
+        phase: "error",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   function submit() {
-    if (!connected) {
+    if (!wallet || !accounts) {
       onConnect();
       return;
     }
     if (tab === "deposit") {
       if (amountNum <= 0) return;
-      if (amountNum > walletBalance) {
+      if (amountNum < MIN_DEPOSIT_USDC) {
+        setTx({ phase: "error", message: `Minimum deposit is ${MIN_DEPOSIT_USDC} USDC.` });
+        return;
+      }
+      if (amountRaw > balance) {
         setTx({ phase: "error", message: "Amount exceeds wallet balance." });
         return;
       }
-      if (amountNum < 100) {
-        setTx({ phase: "error", message: "Minimum deposit is 100 USDC." });
-        return;
-      }
-      runTx(`deposited ${formatUsdc(amountNum)} USDC`, () =>
-        onDeposit(pool.matchId, amountNum),
-      );
+      void runTx(`deposited ${formatUsdc(amountNum)} USDC`, () => [
+        buildDepositInstruction(accounts, amountRaw),
+      ]);
     } else {
       if (amountNum <= 0 || !position) return;
-      if (amountNum > withdrawable + 0.005) {
+      if (amountRaw + pendingFees > available) {
         setTx({
           phase: "error",
-          message: `Only ${formatUsdc(withdrawable)} USDC is unlocked — the rest is backing open bets until settlement.`,
+          message: `Only ${formatUsdc(toUsdc(available))} USDC is unlocked — the rest is backing open bets until settlement.`,
         });
         return;
       }
-      const sharesToBurn = amountNum / sharePrice(pool);
-      runTx(`withdrew ${formatUsdc(amountNum)} USDC`, () =>
-        onWithdraw(pool.matchId, sharesToBurn),
-      );
+      let sharesToBurn = sharesForWithdrawAmount(pool, amountRaw);
+      if (sharesToBurn > position.shares) sharesToBurn = position.shares;
+      if (sharesToBurn <= 0n) return;
+      void runTx(`withdrew ${formatUsdc(amountNum)} USDC`, () => [
+        buildWithdrawInstruction(accounts, sharesToBurn),
+      ]);
     }
   }
 
@@ -141,12 +179,12 @@ export default function PoolDetail({
       {/* header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-xl font-semibold">
-            {pool.home} × {pool.away}
-          </h2>
+          <h2 className="text-xl font-semibold">{pool.tag || pool.matchId}</h2>
           <p className="num mt-0.5 text-xs text-fg-muted">
-            pool PDA ["pool", "{pool.matchId}"] · fee{" "}
-            {(pool.feeRateBps / 100).toFixed(2)}% (1.5 LP / 0.5 protocol)
+            pool <span title={pool.pubkey}>{shortenAddress(pool.pubkey)}</span> · fee{" "}
+            {(pool.feeRateBps / 100).toFixed(2)}% (
+            {((pool.feeRateBps * 0.75) / 100).toFixed(2)} LP /{" "}
+            {((pool.feeRateBps * 0.25) / 100).toFixed(2)} protocol)
           </p>
         </div>
         <span
@@ -165,10 +203,10 @@ export default function PoolDetail({
       {/* metrics */}
       <dl className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
         {[
-          { label: "Total liquidity", value: `${formatUsdc(pool.totalLiquidity)}` },
-          { label: "Locked", value: `${formatUsdc(pool.lockedLiquidity)}` },
+          { label: "Total liquidity", value: formatUsdc(toUsdc(pool.totalLiquidity)) },
+          { label: "Locked", value: formatUsdc(toUsdc(pool.lockedLiquidity)) },
           { label: "Share price", value: sharePrice(pool).toFixed(4) },
-          { label: "LP fees accrued", value: `${formatUsdc(pool.feesAccruedLp)}` },
+          { label: "LP fees accrued", value: formatUsdc(toUsdc(pool.lpFeesAccumulated)) },
         ].map((m) => (
           <div key={m.label} className="rounded-xl bg-bg/60 px-3.5 py-3">
             <dt className="text-[11px] text-fg-muted">{m.label}</dt>
@@ -177,26 +215,27 @@ export default function PoolDetail({
         ))}
       </dl>
 
-      {/* exposure bar */}
+      {/* locked liquidity bar */}
       <div className="mt-4">
         <div className="flex justify-between text-[11px] text-fg-muted">
           <span>
-            ↑ UP exposure <span className="num">{formatUsdc(pool.exposureUp)}</span>
+            Locked (backing open bets){" "}
+            <span className="num">{formatUsdc(toUsdc(pool.lockedLiquidity))}</span>
           </span>
           <span>
-            ↓ DOWN exposure <span className="num">{formatUsdc(pool.exposureDown)}</span>
+            Unlocked <span className="num">{formatUsdc(toUsdc(available))}</span>
           </span>
         </div>
         <div className="mt-1.5 flex h-2 overflow-hidden rounded-full bg-bg/60">
-          {pool.exposureUp + pool.exposureDown > 0 && (
+          {pool.totalLiquidity > 0n && (
             <>
               <div
-                className="bg-cyan-series/80"
+                className="bg-down/60"
                 style={{
-                  width: `${(pool.exposureUp / (pool.exposureUp + pool.exposureDown)) * 100}%`,
+                  width: `${Number((pool.lockedLiquidity * 100n) / pool.totalLiquidity)}%`,
                 }}
               />
-              <div className="flex-1 bg-down/60" />
+              <div className="flex-1 bg-cyan-series/80" />
             </>
           )}
         </div>
@@ -211,35 +250,37 @@ export default function PoolDetail({
           <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-4">
             <div>
               <p className="text-[11px] text-fg-muted">Shares</p>
-              <p className="num text-[15px] font-semibold">{formatUsdc(position.shares)}</p>
+              <p className="num text-[15px] font-semibold">
+                {formatUsdc(toUsdc(position.shares))}
+              </p>
             </div>
             <div>
               <p className="text-[11px] text-fg-muted">Value</p>
-              <p className="num text-[15px] font-semibold">{formatUsdc(posValue)}</p>
+              <p className="num text-[15px] font-semibold">{formatUsdc(toUsdc(posValue))}</p>
             </div>
             <div>
-              <p className="text-[11px] text-fg-muted">PnL</p>
+              <p className="text-[11px] text-fg-muted">Pending fees</p>
               <p
                 className={`num text-[15px] font-semibold ${
-                  posValue - position.depositedUsdc >= 0 ? "text-primary" : "text-down"
+                  pendingFees > 0n ? "text-primary" : ""
                 }`}
               >
-                {posValue - position.depositedUsdc >= 0 ? "↑ +" : "↓ "}
-                {formatUsdc(posValue - position.depositedUsdc)}
+                {formatUsdc(toUsdc(pendingFees))}
               </p>
             </div>
             <div className="flex items-end">
               <button
                 type="button"
-                disabled={position.claimableFees <= 0}
+                disabled={pendingFees <= 0n}
                 onClick={() =>
-                  runTx(`claimed ${formatUsdc(position.claimableFees)} USDC in fees`, () =>
-                    onClaim(pool.matchId),
+                  void runTx(
+                    `claimed ${formatUsdc(toUsdc(pendingFees))} USDC in fees`,
+                    () => [buildClaimFeesInstruction(accounts!)],
                   )
                 }
                 className="rounded-lg bg-chip px-3 py-1.5 text-xs font-semibold transition-colors duration-200 hover:bg-primary hover:text-[#081310] disabled:opacity-40 disabled:hover:bg-chip disabled:hover:text-fg"
               >
-                Claim fees · <span className="num">{formatUsdc(position.claimableFees)}</span>
+                Claim fees · <span className="num">{formatUsdc(toUsdc(pendingFees))}</span>
               </button>
             </div>
           </div>
@@ -297,8 +338,8 @@ export default function PoolDetail({
                 onClick={() =>
                   setAmount(
                     tab === "deposit"
-                      ? walletBalance.toFixed(2)
-                      : withdrawable.toFixed(2),
+                      ? toUsdc(balance).toFixed(2)
+                      : toUsdc(withdrawable).toFixed(2),
                   )
                 }
                 className="rounded-lg bg-chip px-3 py-2 text-xs font-semibold transition-colors duration-200 hover:bg-fg hover:text-[#081310]"
@@ -310,7 +351,7 @@ export default function PoolDetail({
             {tab === "deposit" && amountNum > 0 && (
               <div className="num mt-3 grid grid-cols-2 gap-3 rounded-xl bg-bg/40 p-3 text-[13px] sm:grid-cols-3">
                 <span>
-                  → shares <strong>{formatUsdc(preview)}</strong>
+                  → shares <strong>{formatUsdc(toUsdc(previewShares))}</strong>
                 </span>
                 <span>
                   → pool share <strong>{poolShareAfter.toFixed(2)}%</strong>
@@ -323,9 +364,19 @@ export default function PoolDetail({
             {tab === "withdraw" && position && (
               <p className="mt-3 text-[13px] text-fg-muted">
                 Unlocked and withdrawable now:{" "}
-                <span className="num text-fg">{formatUsdc(withdrawable)} USDC</span>
-                {pool.lockedLiquidity > 0 && (
+                <span className="num text-fg">{formatUsdc(toUsdc(withdrawable))} USDC</span>
+                {pool.lockedLiquidity > 0n && (
                   <> — the rest is backing open bets until settlement.</>
+                )}
+                {pendingFees > 0n && (
+                  <>
+                    {" "}
+                    Withdrawing also pays out your{" "}
+                    <span className="num text-fg">
+                      {formatUsdc(toUsdc(pendingFees))} USDC
+                    </span>{" "}
+                    in pending fees.
+                  </>
                 )}
               </p>
             )}
@@ -333,9 +384,10 @@ export default function PoolDetail({
             <button
               type="button"
               onClick={submit}
-              className="cta-gradient mt-4 w-full rounded-xl py-3.5 text-[15px] font-bold text-[#081310] transition-transform duration-200 hover:scale-[1.01]"
+              disabled={tx.phase === "building" || tx.phase === "pending"}
+              className="cta-gradient mt-4 w-full rounded-xl py-3.5 text-[15px] font-bold text-[#081310] transition-transform duration-200 hover:scale-[1.01] disabled:opacity-60"
             >
-              {!connected
+              {!wallet
                 ? "Connect wallet"
                 : tab === "deposit"
                   ? "Deposit USDC"

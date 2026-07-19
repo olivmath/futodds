@@ -4,13 +4,17 @@ import { PublicKey } from "@solana/web3.js";
 import {
   buildSettleBetInstruction,
   decodeBetAccount,
+  decodeLpPositionAccount,
   decodeMatchAccount,
+  decodePoolAccount,
   deriveAssociatedTokenAddress,
   deriveBetPda,
   derivePoolPda,
   deriveVaultAuthorityPda,
   fetchOpenBets,
   fetchOpenMatches,
+  fetchPoolState,
+  pendingFees,
   TOKEN_PROGRAM_ID,
 } from "../src/solana.js";
 
@@ -106,6 +110,111 @@ test("buildSettleBetInstruction uses pool-backed betting accounts", () => {
     ],
   );
 });
+
+test("decodePoolAccount reads the on-chain Pool layout", () => {
+  const data = buildPoolAccountData({ matchId: "match_1" });
+
+  const pool = decodePoolAccount(data);
+
+  assert.equal(pool.matchId, "match_1");
+  assert.equal(pool.totalLiquidity, "182450000000");
+  assert.equal(pool.lockedLiquidity, "121300000000");
+  assert.equal(pool.feeRate, 200);
+  assert.equal(pool.protocolFeesAccumulated, "728000000");
+  assert.equal(pool.lpFeesAccumulated, "2184500000");
+  assert.equal(pool.feesPerShare, (5n * 10n ** 12n).toString());
+  assert.equal(pool.totalShares, "175000000000");
+});
+
+test("decodeLpPositionAccount reads the on-chain LpPosition layout", () => {
+  const owner = new PublicKey("9xQeWvG816bUx9EPfNQht9C5WmrVKVdkVmv4s1KQTj4G");
+  const pool = new PublicKey("He5N26TPqsKvbG1UJgj5QgVrEroz4hMjPdytMvx677AA");
+  const data = buildLpPositionAccountData({ owner, pool, shares: 5_000_000_000n });
+
+  const position = decodeLpPositionAccount(data);
+
+  assert.equal(position.owner, owner.toBase58());
+  assert.equal(position.pool, pool.toBase58());
+  assert.equal(position.shares, "5000000000");
+  assert.equal(position.depositedAt, 1_700_000_000);
+  assert.equal(position.feesClaimedPerShare, (2n * 10n ** 12n).toString());
+});
+
+test("pendingFees mirrors the program's fees_per_share math", () => {
+  const pool = { feesPerShare: (5n * 10n ** 12n).toString() };
+  const position = { feesClaimedPerShare: (2n * 10n ** 12n).toString(), shares: "5000000000" };
+
+  // (5 - 2) scaled units per share * 5_000 shares = 15_000 base units
+  assert.equal(pendingFees(pool, position), "15000000000");
+  assert.equal(pendingFees({ feesPerShare: "0" }, { feesClaimedPerShare: "0", shares: "10" }), "0");
+});
+
+test("fetchPoolState splits pools and lp positions by discriminator", async () => {
+  const connection = {
+    getProgramAccounts: async () => [
+      { pubkey: new PublicKey("11111111111111111111111111111112"), account: { data: buildPoolAccountData({ matchId: "match_1" }) } },
+      { pubkey: new PublicKey("11111111111111111111111111111113"), account: { data: buildLpPositionAccountData({}) } },
+      { pubkey: new PublicKey("11111111111111111111111111111114"), account: { data: buildBetAccountData({ matchId: "match_1", status: 0, nonce: 1 }) } },
+    ],
+  };
+
+  const { pools, positions } = await fetchPoolState(connection);
+
+  assert.equal(pools.length, 1);
+  assert.equal(pools[0].matchId, "match_1");
+  assert.equal(positions.length, 1);
+  assert.equal(positions[0].shares, "1000000000");
+});
+
+const POOL_DISCRIMINATOR = Buffer.from([241, 154, 109, 4, 17, 177, 109, 188]);
+const LP_POSITION_DISCRIMINATOR = Buffer.from([105, 241, 37, 200, 224, 2, 252, 90]);
+
+function buildPoolAccountData({
+  authority = new PublicKey("He5N26TPqsKvbG1UJgj5QgVrEroz4hMjPdytMvx677AA"),
+  matchId,
+  mint = new PublicKey("CDAQWBQ3DciCWQDtyczAWvTp3xuyuL2t273LSdffjxB"),
+  vault = new PublicKey("9xQeWvG816bUx9EPfNQht9C5WmrVKVdkVmv4s1KQTj4G"),
+}) {
+  return Buffer.concat([
+    POOL_DISCRIMINATOR,
+    authority.toBuffer(),
+    writeString(matchId),
+    mint.toBuffer(),
+    vault.toBuffer(),
+    writeU64(182_450_000_000n),
+    writeU64(121_300_000_000n),
+    writeU16(200),
+    writeU64(728_000_000n),
+    writeU64(2_184_500_000n),
+    writeU128(5n * 10n ** 12n),
+    writeU64(175_000_000_000n),
+    Buffer.from([255]),
+    Buffer.from([254]),
+  ]);
+}
+
+function buildLpPositionAccountData({
+  owner = new PublicKey("9xQeWvG816bUx9EPfNQht9C5WmrVKVdkVmv4s1KQTj4G"),
+  pool = new PublicKey("He5N26TPqsKvbG1UJgj5QgVrEroz4hMjPdytMvx677AA"),
+  shares = 1_000_000_000n,
+}) {
+  return Buffer.concat([
+    LP_POSITION_DISCRIMINATOR,
+    owner.toBuffer(),
+    pool.toBuffer(),
+    writeU64(shares),
+    writeI64(1_700_000_000n),
+    writeU128(2n * 10n ** 12n),
+    Buffer.from([255]),
+  ]);
+}
+
+function writeU128(value) {
+  const bytes = Buffer.alloc(16);
+  bytes.writeBigUInt64LE(value & 0xffffffffffffffffn, 0);
+  bytes.writeBigUInt64LE(value >> 64n, 8);
+  return bytes;
+}
 
 function buildBetAccountData({
   user = new PublicKey("9xQeWvG816bUx9EPfNQht9C5WmrVKVdkVmv4s1KQTj4G"),

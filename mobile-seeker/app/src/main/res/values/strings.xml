@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">oddsdex</string>
+    <string name="app_name" translatable="false">oddsdex</string>
 
     <!-- Demo match (onboarding) -->
     <string name="demo_match">Argentina × Espanha</string>

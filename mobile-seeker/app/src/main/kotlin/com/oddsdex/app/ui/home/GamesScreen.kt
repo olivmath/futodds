@@ -76,7 +76,7 @@ fun GamesScreen(
 
         if (liveTab) {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                items(HomeUiState.MATCHES, key = { it.id }) { match ->
+                items(state.matches, key = { it.id }) { match ->
                     val selected = match.id == state.selectedMatch.id
                     MatchRow(
                         match = match,

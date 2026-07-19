@@ -2,8 +2,12 @@ package com.oddsdex.app.ui.home
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.oddsdex.app.api.BackendApi
 import com.oddsdex.app.core.Analytics
+import com.oddsdex.app.data.BackendTickSource
+import com.oddsdex.app.data.MatchRepository
 import com.oddsdex.app.demo.SimulatedTickSource
+import com.oddsdex.app.domain.TickSource
 import com.oddsdex.app.session.SettledTrade
 import com.oddsdex.app.session.TradeSessionManager
 import com.oddsdex.app.ui.chart.SeriesBuffer
@@ -26,16 +30,26 @@ data class Match(
     val away: String,
     val baseOdd: Double,
     val awayOdd: Double,
+    /** True when this match came from the backend (odds are the oracle's). */
+    val live: Boolean = false,
 ) {
-    val title: String get() = "$home × $away"
+    val title: String get() = if (away.isBlank()) home else "$home × $away"
 
     fun nameOf(side: TeamSide): String = if (side == TeamSide.HOME) home else away
 
     fun oddOf(side: TeamSide): Double = if (side == TeamSide.HOME) baseOdd else awayOdd
 
-    /** Compact team code for the side toggle, derived from the id ("ale-ita" → ALE/ITA). */
-    fun codeOf(side: TeamSide): String =
-        id.split("-")[if (side == TeamSide.HOME) 0 else 1].uppercase()
+    /**
+     * Compact team code for the side toggle — first three letters of the team
+     * name, accent-stripped ("Itália" → ITA). Backend match ids are TxLINE
+     * FixtureIds (numeric), so the id carries no team hint.
+     */
+    fun codeOf(side: TeamSide): String {
+        val name = nameOf(side).ifBlank { id }
+        val ascii = java.text.Normalizer.normalize(name, java.text.Normalizer.Form.NFD)
+            .replace(Regex("\\p{Mn}+"), "")
+        return ascii.filter(Char::isLetterOrDigit).take(3).uppercase()
+    }
 }
 
 data class HomePosition(
@@ -88,7 +102,9 @@ data class ChainTx(
 data class HomeUiState(
     val stakeIndex: Int = 2,   // 10 USDC
     val windowIndex: Int = 1,  // 60 s
-    val selectedMatch: Match = MATCHES.first(),
+    /** Live catalog from MatchRepository (falls back to the demo list). */
+    val matches: List<Match> = MatchRepository.FALLBACK_MATCHES,
+    val selectedMatch: Match = MatchRepository.FALLBACK_MATCHES.first(),
     val selectedSide: TeamSide = TeamSide.HOME,
     val position: HomePosition? = null,
     val lastResult: TradeResult? = null,
@@ -109,30 +125,24 @@ data class HomeUiState(
         val STAKES = listOf(1, 5, 10, 25, 50, 100)
         val WINDOWS = listOf(30, 60, 120, 300)
         const val MULTIPLIER = 1.93
-
-        // Live catalog — replaced by GET /matches when the backend lands.
-        val MATCHES = listOf(
-            Match("arg-esp", "Argentina", "Espanha", 2.10, 3.30),
-            Match("bra-fra", "Brasil", "França", 1.85, 3.60),
-            Match("ing-por", "Inglaterra", "Portugal", 2.45, 2.75),
-            Match("ale-ita", "Alemanha", "Itália", 1.95, 3.40),
-            Match("mex-eua", "México", "EUA", 2.30, 2.90),
-            Match("jap-cor", "Japão", "Coreia do Sul", 2.60, 2.55),
-        )
     }
 }
 
 /**
- * Terminal (home) trading over the simulated feed — an HONEST walk, no
- * steering: wins and losses are real outcomes of the series. Replaced by the
- * WebSocket TickSource + on-chain positions when the backend lands (PRD §7).
+ * Terminal (home) trading. Odds come from the backend oracle (BackendTickSource)
+ * for live matches, or the honest simulated walk for the demo catalog — either
+ * way wins and losses are real outcomes of the series. Positions themselves
+ * are still paper: the betting-engine ixs land in a later phase (PRD §7).
  */
 @HiltViewModel
 class HomeViewModel @Inject constructor(
     private val session: TradeSessionManager,
+    private val repository: MatchRepository,
+    private val api: BackendApi,
 ) : ViewModel() {
 
-    private var tickSource = SimulatedTickSource(baseOdd = HomeUiState.MATCHES.first().baseOdd)
+    private var tickSource: TickSource =
+        newSource(MatchRepository.FALLBACK_MATCHES.first(), TeamSide.HOME)
     val chartBuffer = SeriesBuffer()
 
     private var tickJob: Job? = null
@@ -144,6 +154,7 @@ class HomeViewModel @Inject constructor(
     val state: StateFlow<HomeUiState> = _state
 
     init {
+        repository.start()
         startFeed()
         // The open-position lifecycle lives in TradeSessionManager (it keeps
         // running when the user leaves the app); the ViewModel just mirrors it.
@@ -165,14 +176,58 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             session.settled.filterNotNull().collect { onSettled(it) }
         }
+        viewModelScope.launch {
+            repository.matches.collect { onCatalog(it) }
+        }
     }
+
+    /**
+     * Folds a catalog refresh into the state. If the selected match vanished
+     * (backend replaced the demo list, or the match closed) the terminal moves
+     * to the first available one — unless a position is open, in which case
+     * the current series must keep running until it settles.
+     */
+    private fun onCatalog(matches: List<Match>) {
+        val current = _state.value
+        val selected = matches.firstOrNull { it.id == current.selectedMatch.id }
+        if (selected != null) {
+            _state.value = current.copy(matches = matches, selectedMatch = selected)
+            return
+        }
+        if (current.position != null || matches.isEmpty()) {
+            _state.value = current.copy(matches = matches)
+            return
+        }
+        val next = matches.first()
+        tickSource = newSource(next, TeamSide.HOME)
+        _state.value = current.copy(
+            matches = matches,
+            selectedMatch = next,
+            selectedSide = TeamSide.HOME,
+            lastResult = null,
+        )
+        repository.onMatchWatched(next)
+        startFeed()
+    }
+
+    /** Live matches read the oracle feed; demo matches keep the simulator. */
+    private fun newSource(match: Match, side: TeamSide): TickSource =
+        if (match.live) {
+            BackendTickSource(api, match.id, side, initialOdd = match.oddOf(side))
+        } else {
+            SimulatedTickSource(baseOdd = match.oddOf(side))
+        }
 
     /** Prefills history and streams live ticks for the selected match. */
     private fun startFeed() {
         tickJob?.cancel()
         chartBuffer.clear()
-        tickSource.prefill(SimulatedTickSource.PREFILL_MILLIS)
-            .forEach(chartBuffer::add)
+        when (val source = tickSource) {
+            is SimulatedTickSource ->
+                source.prefill(SimulatedTickSource.PREFILL_MILLIS).forEach(chartBuffer::add)
+            is BackendTickSource ->
+                source.prefill(BackendTickSource.PREFILL_MILLIS).forEach(chartBuffer::add)
+        }
         tickJob = viewModelScope.launch {
             tickSource.ticks().collect { chartBuffer.add(it) }
         }
@@ -188,14 +243,15 @@ class HomeViewModel @Inject constructor(
         val current = _state.value
         if (current.position != null) return false
         if (match.id == current.selectedMatch.id) return true
-        tickSource = SimulatedTickSource(baseOdd = match.baseOdd)
+        tickSource = newSource(match, TeamSide.HOME)
         _state.value = current.copy(
             selectedMatch = match,
             selectedSide = TeamSide.HOME,
             lastResult = null,
         )
+        repository.onMatchWatched(match)
         startFeed()
-        Analytics.log("match_opened", mapOf("match" to match.id))
+        Analytics.log("match_opened", mapOf("match" to match.id, "live" to match.live.toString()))
         return true
     }
 
@@ -208,7 +264,7 @@ class HomeViewModel @Inject constructor(
         val current = _state.value
         if (current.position != null) return false
         if (side == current.selectedSide) return true
-        tickSource = SimulatedTickSource(baseOdd = current.selectedMatch.oddOf(side))
+        tickSource = newSource(current.selectedMatch, side)
         _state.value = current.copy(selectedSide = side, lastResult = null)
         startFeed()
         Analytics.log(

@@ -34,9 +34,13 @@ android {
             versionNameSuffix = "-devnet"
             buildConfigField("String", "CLUSTER", "\"devnet\"")
             buildConfigField("String", "RPC_URL", "\"https://api.devnet.solana.com\"")
-            // Devnet USDC mint comes from the program dev — placeholder until contract alignment (TODO.md Phase 4)
-            buildConfigField("String", "USDC_MINT", "\"\"")
-            buildConfigField("String", "API_BASE_URL", "\"\"")
+            buildConfigField("String", "USDC_MINT", "\"CDAQWBQ3DciCWQDtyczAWvTp3xuyuL2t273LSdffjxB\"")
+            // Backend (backend/src/server.js). localhost works on a USB-attached
+            // device via `adb reverse tcp:8787 tcp:8787`; override with the
+            // host's LAN IP for Wi-Fi: ./gradlew -PoddsdexApiBaseUrl=http://192.168.x.x:8787 ...
+            val apiBaseUrl = (project.findProperty("oddsdexApiBaseUrl") as String?)
+                ?: "http://localhost:8787"
+            buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
             buildConfigField("String", "WS_URL", "\"\"")
         }
         create("mainnet") {
@@ -101,7 +105,12 @@ dependencies {
     implementation(libs.ktor.client.content.negotiation)
     implementation(libs.ktor.serialization.kotlinx.json)
 
-    implementation(libs.solana.mwa.clientlib.ktx)
+    implementation(libs.solana.mwa.clientlib.ktx) {
+        // clientlib-ktx 2.0.3 leaks androidx.test.ext:junit-ktx into the app's
+        // runtime classpath, pinning 1.1.5 there and breaking androidTest/lint
+        // dependency resolution against espresso's 1.2.1.
+        exclude(group = "androidx.test.ext")
+    }
     implementation(libs.solana.web3)
     implementation(libs.solana.rpc.core)
     implementation(libs.multimult)

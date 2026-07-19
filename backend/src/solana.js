@@ -21,6 +21,11 @@ export const BET_ACCOUNT_SIZE = 157;
 const UPDATE_ODDS_DISCRIMINATOR = Uint8Array.from([185, 97, 196, 202, 171, 32, 3, 160]);
 const SETTLE_BET_DISCRIMINATOR = Uint8Array.from([115, 55, 234, 177, 227, 4, 10, 67]);
 const SET_MATCH_STATUS_DISCRIMINATOR = Uint8Array.from([251, 129, 173, 156, 248, 131, 170, 50]);
+const POOL_ACCOUNT_DISCRIMINATOR = Uint8Array.from([241, 154, 109, 4, 17, 177, 109, 188]);
+const LP_POSITION_ACCOUNT_DISCRIMINATOR = Uint8Array.from([105, 241, 37, 200, 224, 2, 252, 90]);
+
+// Mirrors betting_engine::FEE_SCALE — fees_per_share is scaled by 1e12.
+export const FEE_SCALE = 1_000_000_000_000n;
 
 export function createConnection(rpcUrl) {
   return new Connection(rpcUrl, "confirmed");
@@ -251,6 +256,107 @@ export function decodeBetAccount(data) {
     status,
     nonce,
   };
+}
+
+export function decodePoolAccount(data) {
+  const buffer = Buffer.from(data);
+  let offset = 8;
+
+  const authority = new PublicKey(buffer.subarray(offset, offset + 32)).toBase58();
+  offset += 32;
+  const matchIdLength = buffer.readUInt32LE(offset);
+  offset += 4;
+  const matchId = buffer.subarray(offset, offset + matchIdLength).toString("utf8");
+  offset += matchIdLength;
+  const mint = new PublicKey(buffer.subarray(offset, offset + 32)).toBase58();
+  offset += 32;
+  const vault = new PublicKey(buffer.subarray(offset, offset + 32)).toBase58();
+  offset += 32;
+  const totalLiquidity = buffer.readBigUInt64LE(offset);
+  offset += 8;
+  const lockedLiquidity = buffer.readBigUInt64LE(offset);
+  offset += 8;
+  const feeRate = buffer.readUInt16LE(offset);
+  offset += 2;
+  const protocolFeesAccumulated = buffer.readBigUInt64LE(offset);
+  offset += 8;
+  const lpFeesAccumulated = buffer.readBigUInt64LE(offset);
+  offset += 8;
+  const feesPerShare = readU128LE(buffer, offset);
+  offset += 16;
+  const totalShares = buffer.readBigUInt64LE(offset);
+
+  return {
+    authority,
+    matchId,
+    mint,
+    vault,
+    totalLiquidity: totalLiquidity.toString(),
+    lockedLiquidity: lockedLiquidity.toString(),
+    feeRate,
+    protocolFeesAccumulated: protocolFeesAccumulated.toString(),
+    lpFeesAccumulated: lpFeesAccumulated.toString(),
+    feesPerShare: feesPerShare.toString(),
+    totalShares: totalShares.toString(),
+  };
+}
+
+export function decodeLpPositionAccount(data) {
+  const buffer = Buffer.from(data);
+  let offset = 8;
+
+  const owner = new PublicKey(buffer.subarray(offset, offset + 32)).toBase58();
+  offset += 32;
+  const pool = new PublicKey(buffer.subarray(offset, offset + 32)).toBase58();
+  offset += 32;
+  const shares = buffer.readBigUInt64LE(offset);
+  offset += 8;
+  const depositedAt = Number(buffer.readBigInt64LE(offset));
+  offset += 8;
+  const feesClaimedPerShare = readU128LE(buffer, offset);
+
+  return {
+    owner,
+    pool,
+    shares: shares.toString(),
+    depositedAt,
+    feesClaimedPerShare: feesClaimedPerShare.toString(),
+  };
+}
+
+// Mirrors betting_engine::pending_fees.
+export function pendingFees(pool, position) {
+  const delta = BigInt(pool.feesPerShare) - BigInt(position.feesClaimedPerShare);
+  if (delta <= 0n) {
+    return "0";
+  }
+  return ((delta * BigInt(position.shares)) / FEE_SCALE).toString();
+}
+
+export async function fetchPoolState(connection) {
+  const accounts = await connection.getProgramAccounts(BETTING_PROGRAM_ID, {
+    commitment: "confirmed",
+  });
+
+  const pools = [];
+  const positions = [];
+  for (const { pubkey, account } of accounts) {
+    const data = Buffer.from(account.data);
+    if (startsWithBytes(data, POOL_ACCOUNT_DISCRIMINATOR)) {
+      pools.push({ pubkey: pubkey.toBase58(), ...decodePoolAccount(data) });
+    } else if (startsWithBytes(data, LP_POSITION_ACCOUNT_DISCRIMINATOR)) {
+      positions.push({ pubkey: pubkey.toBase58(), ...decodeLpPositionAccount(data) });
+    }
+  }
+  return { pools, positions };
+}
+
+function readU128LE(buffer, offset) {
+  return buffer.readBigUInt64LE(offset) + (buffer.readBigUInt64LE(offset + 8) << 64n);
+}
+
+function startsWithBytes(buffer, prefix) {
+  return prefix.every((byte, index) => buffer[index] === byte);
 }
 
 function encodeUpdateOddsData(matchId, odds, tag = "", oddsSource = 0) {
