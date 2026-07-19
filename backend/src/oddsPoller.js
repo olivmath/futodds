@@ -20,7 +20,11 @@ export function createOddsPoller({
         const streamStatus = store.getStreamStatus(match.id);
         if (streamStatus !== "active") continue;
 
-        const odds = store.getLatestOdds(match.id);
+        let odds = store.getLatestOdds(match.id);
+        if (!odds && match.oddsSource === "random") {
+          odds = generateRandomOdds(match.odds);
+          store.setLatestOdds(match.id, odds);
+        }
         if (!odds) continue;
 
         try {
@@ -57,4 +61,17 @@ export function createOddsPoller({
   }
 
   return { runOnce, start, stop };
+}
+
+function generateRandomOdds(current) {
+  const base = current ?? { home: 3334, away: 3333, draw: 3333 };
+  const drift = () => Math.floor((Math.random() - 0.5) * 400);
+  let home = Math.max(500, base.home + drift());
+  let away = Math.max(500, base.away + drift());
+  let draw = Math.max(500, base.draw + drift());
+  const total = home + away + draw;
+  home = Math.round((home / total) * 10000);
+  away = Math.round((away / total) * 10000);
+  draw = 10000 - home - away;
+  return { home, away, draw };
 }

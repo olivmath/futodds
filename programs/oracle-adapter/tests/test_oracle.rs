@@ -32,6 +32,17 @@ fn build_update_odds_ix(
     odds_away: u16,
     odds_draw: u16,
 ) -> Instruction {
+    build_update_odds_ix_with_tag(authority, match_id, odds_home, odds_away, odds_draw, "")
+}
+
+fn build_update_odds_ix_with_tag(
+    authority: &Keypair,
+    match_id: &str,
+    odds_home: u16,
+    odds_away: u16,
+    odds_draw: u16,
+    tag: &str,
+) -> Instruction {
     let program_id = oracle_adapter::id();
     let match_account =
         Pubkey::find_program_address(&[b"match", match_id.as_bytes()], &program_id).0;
@@ -43,12 +54,33 @@ fn build_update_odds_ix(
             odds_home,
             odds_away,
             odds_draw,
+            tag: tag.to_string(),
         }
         .data(),
         oracle_adapter::accounts::UpdateOdds {
             authority: authority.pubkey(),
             match_account,
             system_program: system_program::ID,
+        }
+        .to_account_metas(None),
+    )
+}
+
+fn build_set_match_status_ix(authority: &Keypair, match_id: &str, status: u8) -> Instruction {
+    let program_id = oracle_adapter::id();
+    let match_account =
+        Pubkey::find_program_address(&[b"match", match_id.as_bytes()], &program_id).0;
+
+    Instruction::new_with_bytes(
+        program_id,
+        &oracle_adapter::instruction::SetMatchStatus {
+            match_id: match_id.to_string(),
+            status,
+        }
+        .data(),
+        oracle_adapter::accounts::SetMatchStatus {
+            authority: authority.pubkey(),
+            match_account,
         }
         .to_account_metas(None),
     )
@@ -103,6 +135,7 @@ fn test_create_match_with_initial_odds() {
     assert_eq!(match_state.odds_draw, 500);
     assert_eq!(match_state.match_id, match_id);
     assert_eq!(match_state.authority, payer.pubkey());
+    assert_eq!(match_state.status, 0);
 }
 
 #[test]
@@ -128,6 +161,44 @@ fn test_update_existing_odds() {
     assert_eq!(match_state.odds_home, 6700);
     assert_eq!(match_state.odds_away, 2800);
     assert_eq!(match_state.odds_draw, 500);
+    assert_eq!(match_state.status, 0);
+}
+
+#[test]
+fn test_authority_can_close_match() {
+    let (mut svm, payer) = setup();
+    let match_id = "match_1";
+
+    let ix = build_update_odds_ix(&payer, match_id, 6500, 3000, 500);
+    send_tx(&mut svm, ix, &payer).expect("create match");
+
+    let ix = build_set_match_status_ix(&payer, match_id, 1);
+    send_tx(&mut svm, ix, &payer).expect("close match");
+
+    let program_id = oracle_adapter::id();
+    let match_pda = Pubkey::find_program_address(&[b"match", match_id.as_bytes()], &program_id).0;
+    let account = svm.get_account(&match_pda).unwrap();
+    let mut data: &[u8] = &account.data;
+    let match_state = MatchAccount::try_deserialize(&mut data).unwrap();
+
+    assert_eq!(match_state.status, 1);
+}
+
+#[test]
+fn test_reject_invalid_match_status() {
+    let (mut svm, payer) = setup();
+    let match_id = "match_1";
+
+    let ix = build_update_odds_ix(&payer, match_id, 6500, 3000, 500);
+    send_tx(&mut svm, ix, &payer).expect("create match");
+
+    let ix = build_set_match_status_ix(&payer, match_id, 2);
+    let res = send_tx(&mut svm, ix, &payer);
+
+    assert!(
+        res.is_err(),
+        "Expected invalid status error but tx succeeded"
+    );
 }
 
 #[test]
@@ -191,6 +262,11 @@ fn test_update_odds_emits_odds_updated_event() {
     );
     offset += match_id_len;
 
+    // tag (empty string)
+    let tag_len = u32::from_le_bytes(payload[offset..offset + 4].try_into().unwrap()) as usize;
+    offset += 4;
+    assert_eq!(tag_len, 0);
+
     assert_eq!(
         u16::from_le_bytes(payload[offset..offset + 2].try_into().unwrap()),
         6500
@@ -210,4 +286,47 @@ fn test_update_odds_emits_odds_updated_event() {
         i64::from_le_bytes(payload[offset..offset + 8].try_into().unwrap()),
         match_state.updated_at
     );
+}
+
+#[test]
+fn test_create_match_with_tag() {
+    let (mut svm, payer) = setup();
+    let match_id = "18182808";
+    let tag = "Australia vs Brazil";
+
+    let ix = build_update_odds_ix_with_tag(&payer, match_id, 6500, 3000, 500, tag);
+    let res = send_tx(&mut svm, ix, &payer);
+    assert!(res.is_ok(), "Failed to create match with tag: {:?}", res.err());
+
+    let program_id = oracle_adapter::id();
+    let match_pda = Pubkey::find_program_address(&[b"match", match_id.as_bytes()], &program_id).0;
+    let account = svm.get_account(&match_pda).unwrap();
+    let mut data: &[u8] = &account.data;
+    let match_state = MatchAccount::try_deserialize(&mut data).unwrap();
+
+    assert_eq!(match_state.match_id, match_id);
+    assert_eq!(match_state.tag, tag);
+    assert_eq!(match_state.odds_home, 6500);
+}
+
+#[test]
+fn test_update_odds_preserves_tag_when_empty() {
+    let (mut svm, payer) = setup();
+    let match_id = "18182808";
+
+    let ix = build_update_odds_ix_with_tag(&payer, match_id, 6500, 3000, 500, "Australia vs Brazil");
+    send_tx(&mut svm, ix, &payer).expect("create match");
+
+    // Update with empty tag should preserve existing tag
+    let ix = build_update_odds_ix(&payer, match_id, 7000, 2500, 500);
+    send_tx(&mut svm, ix, &payer).expect("update odds");
+
+    let program_id = oracle_adapter::id();
+    let match_pda = Pubkey::find_program_address(&[b"match", match_id.as_bytes()], &program_id).0;
+    let account = svm.get_account(&match_pda).unwrap();
+    let mut data: &[u8] = &account.data;
+    let match_state = MatchAccount::try_deserialize(&mut data).unwrap();
+
+    assert_eq!(match_state.tag, "Australia vs Brazil");
+    assert_eq!(match_state.odds_home, 7000);
 }

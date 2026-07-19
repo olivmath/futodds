@@ -17,15 +17,18 @@ export function GameAdminTab({
   bets,
   backendStatus,
   connection,
+  backendUrl,
 }: {
   matchId: string;
   chainMatches: ChainMatch[];
   bets: ChainBet[];
   backendStatus: any;
   connection: Connection;
+  backendUrl: string;
 }) {
-  const match = chainMatches.find((m) => m.account?.id === matchId);
-  const matchBets = bets.filter((b) => b.account?.match_id === matchId);
+  const match = chainMatches.find((m) => m.account?.matchId === matchId);
+  const matchBets = bets.filter((b) => b.account?.matchId === matchId);
+  const isTxline = match?.account?.oddsSource === 1;
 
   const [score, setScore] = useState({ home: 0, away: 0 });
   const [oddsSeries, setOddsSeries] = useState<any[]>([]);
@@ -67,7 +70,7 @@ export function GameAdminTab({
   useEffect(() => {
     const pollInterval = setInterval(async () => {
       try {
-        const res = await fetch("/status");
+        const res = await fetch(`${backendUrl}/status`);
         const status = await res.json();
         const m = status.matches?.find((x: any) => x.id === matchId);
         if (m) {
@@ -89,7 +92,7 @@ export function GameAdminTab({
   const callStream = async (action: string, eventLabel: string) => {
     setLoading(true);
     try {
-      const res = await fetch(`/stream/${action}/${matchId}`, { method: "POST" });
+      const res = await fetch(`${backendUrl}/stream/${action}/${matchId}`, { method: "POST" });
       if (res.ok) {
         const newStatus = action === "stop" ? "inactive" : "active";
         setStreamStatus(newStatus as any);
@@ -104,7 +107,7 @@ export function GameAdminTab({
   const handleClose = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/matches/${matchId}/close`, { method: "POST" });
+      const res = await fetch(`${backendUrl}/matches/${matchId}/close`, { method: "POST" });
       if (res.ok) addEvent(new Date().toLocaleTimeString(), "info", "game.closed", matchId);
     } catch (e) {
       addEvent(new Date().toLocaleTimeString(), "error", "error", String(e));
@@ -133,6 +136,9 @@ export function GameAdminTab({
         onClose={handleClose}
         loading={loading}
       />
+      <div style={{ fontSize: "11px", color: "#888", marginTop: "4px" }}>
+        Feed: {isTxline ? "TxLINE (realtime SSE)" : "Random (poller gera odds a cada ciclo)"}
+      </div>
       <EventsLog events={events} />
     </div>
   );

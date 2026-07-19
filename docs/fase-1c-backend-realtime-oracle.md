@@ -36,7 +36,7 @@ backend settlement worker
 | **Backend** | JS com Express simples |
 | **Realtime** | Solana RPC WebSocket, nao SSE/WebSocket proprio |
 | **Fonte da verdade** | Eventos e contas on-chain |
-| **Odds MVP** | Gerador/poller configuravel por match |
+| **Odds MVP** | Gerador/poller sincroniza `MatchAccount` aberto on-chain |
 | **Settlement MVP** | Worker varre bets `Open` expiradas e chama `settle_bet` |
 | **Fallback frontend** | Refetch de conta on-chain se parse do evento falhar |
 

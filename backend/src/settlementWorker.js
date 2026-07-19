@@ -1,6 +1,8 @@
 import { logger as defaultLogger } from "./logger.js";
 
-export function createSettlementWorker({ store, fetchOpenBets, settleBet, now = unixNow, logger = defaultLogger }) {
+export function createSettlementWorker({ store, fetchOpenBets, settleBet, now = unixNow, intervalMs = 10_000, logger = defaultLogger }) {
+  let timer = null;
+
   async function runOnce() {
     store.setSettlementRunning(true);
     let checked = 0;
@@ -71,7 +73,20 @@ export function createSettlementWorker({ store, fetchOpenBets, settleBet, now = 
     }
   }
 
-  return { runOnce };
+  function start() {
+    if (timer) return;
+    void runOnce().catch(() => undefined);
+    timer = setInterval(() => void runOnce().catch(() => undefined), intervalMs);
+  }
+
+  function stop() {
+    if (timer) {
+      clearInterval(timer);
+      timer = null;
+    }
+  }
+
+  return { runOnce, start, stop };
 }
 
 function unixNow() {

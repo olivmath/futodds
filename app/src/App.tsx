@@ -464,6 +464,7 @@ export default function App() {
                 updatedAt: event.updatedAt,
                 tag: existing?.account.tag ?? event.tag ?? "",
                 status: existing?.account.status ?? 0,
+                oddsSource: existing?.account.oddsSource ?? 0,
                 bump: existing?.account.bump ?? 0,
               },
             },
@@ -518,6 +519,7 @@ export default function App() {
           oddsHome: account.oddsHome,
           oddsAway: account.oddsAway,
           oddsDraw: account.oddsDraw,
+          oddsSource: account.oddsSource,
           updatedAt: account.updatedAt,
         })),
         bets: bets.map(({ account }) => ({
@@ -595,17 +597,31 @@ export default function App() {
       </nav>
 
       {activeTab === "game-admin" ? (
-        selectedMatchId ? (
-          <GameAdminTab
-            matchId={selectedMatchId}
-            chainMatches={chainMatches}
-            bets={bets}
-            backendStatus={backendStatus}
-            connection={connection}
-          />
-        ) : (
-          <div style={{ padding: "20px", color: "#999" }}>Select a game first from the Games tab</div>
-        )
+        <>
+          <div className="create-grid" style={{ padding: "20px 20px 0" }}>
+            <label className="field">
+              <span>Jogo</span>
+              <select value={selectedMatchId ?? ""} onChange={(e) => setSelectedMatchId(e.target.value || null)}>
+                <option value="">Selecione um jogo</option>
+                {rows.map((row) => (
+                  <option key={row.matchId} value={row.matchId}>{row.tag || row.matchId}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+          {selectedMatchId ? (
+            <GameAdminTab
+              matchId={selectedMatchId}
+              chainMatches={chainMatches}
+              bets={bets}
+              backendStatus={backendStatus}
+              connection={connection}
+              backendUrl={backendUrl}
+            />
+          ) : (
+            <div style={{ padding: "20px", color: "#999" }}>Selecione um jogo acima</div>
+          )}
+        </>
       ) : activeTab === "create" ? (
         <CreateGamePanel
           form={createForm}
@@ -614,7 +630,10 @@ export default function App() {
           backendUrl={backendUrl}
           onConnect={() => void connectWallet()}
           onSubmit={() => void createGameOnChain()}
-          onChange={(field, value) => setCreateForm((current) => ({ ...current, [field]: value }))}
+          onChange={(field, value) => setCreateForm((current) => {
+            if (field === "oddsSource") return { ...current, oddsSource: value, matchId: "", tag: "" };
+            return { ...current, [field]: value };
+          })}
         />
       ) : activeTab === "pool" ? (
         <PoolPanel
@@ -852,8 +871,8 @@ function CreateGamePanel({
         ) : (
           <>
             <label className="field">
-              <span>ID do jogo</span>
-              <input value={form.matchId} onChange={(event) => onChange("matchId", event.target.value)} placeholder="match_3" />
+              <span>Nome do jogo</span>
+              <input value={form.tag} onChange={(event) => onChange("tag", event.target.value)} placeholder="Brasil vs Argentina" />
             </label>
             <label className="field">
               <span>Casa bps</span>
@@ -991,7 +1010,7 @@ function BetPanel({
             <option value="">Selecione</option>
             {rows.map((row) => (
               <option key={row.matchId} value={row.matchId}>
-                {row.matchId}
+                {row.tag || row.matchId}
               </option>
             ))}
           </select>
@@ -1125,7 +1144,7 @@ function PoolPanel({
           <select value={poolForm.matchId} onChange={(e) => onPoolChange("matchId", e.target.value)}>
             <option value="">Selecione</option>
             {rows.map((row) => (
-              <option key={row.matchId} value={row.matchId}>{row.matchId}</option>
+              <option key={row.matchId} value={row.matchId}>{row.tag || row.matchId}</option>
             ))}
           </select>
         </label>
@@ -1151,7 +1170,7 @@ function PoolPanel({
           <select value={depositForm.matchId} onChange={(e) => onDepositChange("matchId", e.target.value)}>
             <option value="">Selecione</option>
             {rows.map((row) => (
-              <option key={row.matchId} value={row.matchId}>{row.matchId}</option>
+              <option key={row.matchId} value={row.matchId}>{row.tag || row.matchId}</option>
             ))}
           </select>
         </label>

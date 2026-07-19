@@ -1,5 +1,7 @@
 const CRITICAL_EVENTS = new Set([
   "game.created",
+  "admin.match.create",
+  "admin.match.source",
   "stream.started",
   "stream.stopped",
   "stream.resumed",
@@ -8,6 +10,8 @@ const CRITICAL_EVENTS = new Set([
   "settlement.executed",
   "error.fatal",
   "app.started",
+  "poller.tick",
+  "poller.started",
 ]);
 
 export function createLogger({ sink = console } = {}) {

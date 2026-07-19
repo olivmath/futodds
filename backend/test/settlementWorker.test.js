@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { setTimeout as delay } from "node:timers/promises";
 import test from "node:test";
 import { createSettlementWorker } from "../src/settlementWorker.js";
 import { createStore } from "../src/store.js";
@@ -6,7 +7,8 @@ import { createStore } from "../src/store.js";
 test("settlement worker settles only open expired bets", async () => {
   const settled = [];
   const logs = [];
-  const store = createStore([{ id: "match_1", odds: { home: 6700, away: 2800, draw: 500 } }]);
+  const store = createStore();
+  store.replaceMatches([{ id: "match_1", odds: { home: 6700, away: 2800, draw: 500 }, status: 0 }]);
   const worker = createSettlementWorker({
     store,
     logger: { info: (event, details) => logs.push({ event, details }), error() {} },
@@ -42,7 +44,8 @@ test("settlement worker settles only open expired bets", async () => {
 
 test("settlement worker records a failed bet and continues the run", async () => {
   const settled = [];
-  const store = createStore([{ id: "match_1", odds: { home: 6700, away: 2800, draw: 500 } }]);
+  const store = createStore();
+  store.replaceMatches([{ id: "match_1", odds: { home: 6700, away: 2800, draw: 500 }, status: 0 }]);
   const worker = createSettlementWorker({
     store,
     logger: { info() {}, error() {} },
@@ -66,4 +69,30 @@ test("settlement worker records a failed bet and continues the run", async () =>
   assert.deepEqual(settled, [2]);
   assert.equal(store.status.errors[0].message, "settlement tx failed");
   assert.equal(store.status.txs[0].signature, "settled_2");
+});
+
+test("start() runs settlement on interval and stop() halts it", async () => {
+  let runs = 0;
+  const store = createStore();
+  store.replaceMatches([{ id: "match_1", odds: { home: 5000, away: 3000, draw: 2000 }, status: 0 }]);
+  const worker = createSettlementWorker({
+    store,
+    logger: { info() {}, error() {} },
+    intervalMs: 50,
+    now: () => 1_700_000_100,
+    fetchOpenBets: async () => {
+      runs++;
+      return [];
+    },
+    settleBet: async () => "sig",
+  });
+
+  worker.start();
+  await delay(130);
+  worker.stop();
+  const runsAfterStop = runs;
+  await delay(80);
+
+  assert.ok(runs >= 2, `expected at least 2 runs, got ${runs}`);
+  assert.equal(runs, runsAfterStop, "no runs after stop");
 });

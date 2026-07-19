@@ -8,18 +8,19 @@ import {
 } from "@solana/web3.js";
 
 export const ORACLE_PROGRAM_ID = new PublicKey(
-  process.env.ORACLE_PROGRAM_ID ?? "6BVWCCQDjQDcjQYhmbzJ9DFWY9LyDojM3mYoWivrASaG",
+  process.env.ORACLE_PROGRAM_ID ?? "HwDVX9fTTxmnLBJwtig7ugsWuiqLh14pj71WtxQaaSSa",
 );
 export const BETTING_PROGRAM_ID = new PublicKey(
-  process.env.BETTING_PROGRAM_ID ?? "GoccKzkMS5BWRmrbLdGKzqKUUcksZB3DftW82F7boCoQ",
+  process.env.BETTING_PROGRAM_ID ?? "67mbZdR3KxZxRxgKDMT7JbxtYU92C1y81Q4KKGQRkMMY",
 );
 export const TOKEN_PROGRAM_ID = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
 export const ASSOCIATED_TOKEN_PROGRAM_ID = new PublicKey("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
-export const MATCH_ACCOUNT_SIZE = 96;
+export const MATCH_ACCOUNT_SIZE = 165;
 export const BET_ACCOUNT_SIZE = 157;
 
 const UPDATE_ODDS_DISCRIMINATOR = Uint8Array.from([185, 97, 196, 202, 171, 32, 3, 160]);
 const SETTLE_BET_DISCRIMINATOR = Uint8Array.from([115, 55, 234, 177, 227, 4, 10, 67]);
+const SET_MATCH_STATUS_DISCRIMINATOR = Uint8Array.from([251, 129, 173, 156, 248, 131, 170, 50]);
 
 export function createConnection(rpcUrl) {
   return new Connection(rpcUrl, "confirmed");
@@ -62,8 +63,8 @@ export function deriveAssociatedTokenAddress(owner, mint) {
   )[0];
 }
 
-export function buildUpdateOddsInstruction(authority, matchId, odds) {
-  const data = encodeUpdateOddsData(matchId, odds);
+export function buildUpdateOddsInstruction(authority, matchId, odds, tag = "", oddsSource = 0) {
+  const data = encodeUpdateOddsData(matchId, odds, tag, oddsSource);
   return new TransactionInstruction({
     programId: ORACLE_PROGRAM_ID,
     keys: [
@@ -94,10 +95,41 @@ export function buildSettleBetInstruction(authority, bet, mint, oddsAtExpiryHome
   });
 }
 
-export async function sendUpdateOdds(connection, authority, matchId, odds) {
+export async function sendUpdateOdds(connection, authority, matchId, odds, tag = "", oddsSource = 0) {
   return sendAndConfirmTransaction(
     connection,
-    new Transaction().add(buildUpdateOddsInstruction(authority, matchId, odds)),
+    new Transaction().add(buildUpdateOddsInstruction(authority, matchId, odds, tag, oddsSource)),
+    [authority],
+    { commitment: "confirmed" },
+  );
+}
+
+export function buildSetMatchStatusInstruction(authority, matchId, status) {
+  const matchBytes = Buffer.from(matchId, "utf8");
+  const data = Buffer.alloc(8 + 4 + matchBytes.length + 1);
+  let offset = 0;
+  Buffer.from(SET_MATCH_STATUS_DISCRIMINATOR).copy(data, offset);
+  offset += 8;
+  data.writeUInt32LE(matchBytes.length, offset);
+  offset += 4;
+  matchBytes.copy(data, offset);
+  offset += matchBytes.length;
+  data.writeUInt8(status, offset);
+
+  return new TransactionInstruction({
+    programId: ORACLE_PROGRAM_ID,
+    keys: [
+      { pubkey: authority.publicKey ?? new PublicKey(authority), isSigner: true, isWritable: false },
+      { pubkey: deriveMatchPda(matchId), isSigner: false, isWritable: true },
+    ],
+    data,
+  });
+}
+
+export async function sendSetMatchStatus(connection, authority, matchId, status) {
+  return sendAndConfirmTransaction(
+    connection,
+    new Transaction().add(buildSetMatchStatusInstruction(authority, matchId, status)),
     [authority],
     { commitment: "confirmed" },
   );
@@ -144,6 +176,10 @@ export function decodeMatchAccount(data) {
   offset += 4;
   const matchId = buffer.subarray(offset, offset + matchIdLength).toString("utf8");
   offset += matchIdLength;
+  const tagLength = buffer.readUInt32LE(offset);
+  offset += 4;
+  const tag = buffer.subarray(offset, offset + tagLength).toString("utf8");
+  offset += tagLength;
   const oddsHome = buffer.readUInt16LE(offset);
   offset += 2;
   const oddsAway = buffer.readUInt16LE(offset);
@@ -154,14 +190,19 @@ export function decodeMatchAccount(data) {
   offset += 8;
   const status = buffer.readUInt8(offset);
   offset += 1;
+  const oddsSource = buffer.readUInt8(offset);
+  offset += 1;
   const bump = buffer.readUInt8(offset);
 
   return {
     authority,
     id: matchId,
+    tag,
     odds: { home: oddsHome, away: oddsAway, draw: oddsDraw },
     updatedAt: updatedAt.toString(),
     status,
+    oddsSource,
+    oddsSourceLabel: oddsSource === 0 ? "random" : "txline",
     bump,
   };
 }
@@ -212,9 +253,10 @@ export function decodeBetAccount(data) {
   };
 }
 
-function encodeUpdateOddsData(matchId, odds) {
+function encodeUpdateOddsData(matchId, odds, tag = "", oddsSource = 0) {
   const matchBytes = Buffer.from(matchId, "utf8");
-  const data = Buffer.alloc(8 + 4 + matchBytes.length + 6);
+  const tagBytes = Buffer.from(tag, "utf8");
+  const data = Buffer.alloc(8 + 4 + matchBytes.length + 6 + 4 + tagBytes.length + 1);
   let offset = 0;
   Buffer.from(UPDATE_ODDS_DISCRIMINATOR).copy(data, offset);
   offset += 8;
@@ -227,6 +269,12 @@ function encodeUpdateOddsData(matchId, odds) {
   data.writeUInt16LE(odds.away, offset);
   offset += 2;
   data.writeUInt16LE(odds.draw, offset);
+  offset += 2;
+  data.writeUInt32LE(tagBytes.length, offset);
+  offset += 4;
+  tagBytes.copy(data, offset);
+  offset += tagBytes.length;
+  data.writeUInt8(oddsSource, offset);
   return data;
 }
 

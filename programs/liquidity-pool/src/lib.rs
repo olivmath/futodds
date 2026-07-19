@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 use anchor_spl::associated_token::AssociatedToken;
 use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
 
-declare_id!("B4LZJT28Ucqe3eCpSrhQCiBhZ2dfCxH1eMVWfQqShgy9");
+declare_id!("3jeWz6WQaM8DG5jRqoVff4FtsMVRjg9peGGMjjgUYRMY");
 
 pub const MIN_DEPOSIT_AMOUNT: u64 = 1_000_000;
 pub const MAX_FEE_RATE: u16 = 1_000;
@@ -13,10 +13,7 @@ pub mod liquidity_pool {
     use super::*;
 
     pub fn create_pool(ctx: Context<CreatePool>, match_id: String, fee_rate: u16) -> Result<()> {
-        require!(
-            fee_rate <= MAX_FEE_RATE,
-            LiquidityPoolError::InvalidFeeRate
-        );
+        require!(fee_rate <= MAX_FEE_RATE, LiquidityPoolError::InvalidFeeRate);
 
         let pool = &mut ctx.accounts.pool;
         pool.authority = ctx.accounts.authority.key();

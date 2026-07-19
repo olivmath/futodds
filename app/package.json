@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "dev:local": "vite --host 127.0.0.1 --port 5173",
+    "dev:testnet": "vite --host 127.0.0.1 --port 5173 --mode testnet",
     "build": "tsc && vite build",
     "test": "vitest run"
   },

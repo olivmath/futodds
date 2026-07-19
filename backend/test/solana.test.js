@@ -49,6 +49,7 @@ test("decodeMatchAccount reads the on-chain MatchAccount layout with status", ()
   const data = buildMatchAccountData({
     authority,
     matchId: "match_1",
+    tag: "Test Game",
     odds: { home: 6500, away: 3000, draw: 500 },
     updatedAt: 1_700_000_000,
     status: 0,
@@ -58,6 +59,7 @@ test("decodeMatchAccount reads the on-chain MatchAccount layout with status", ()
 
   assert.equal(match.authority, authority.toBase58());
   assert.equal(match.id, "match_1");
+  assert.equal(match.tag, "Test Game");
   assert.deepEqual(match.odds, { home: 6500, away: 3000, draw: 500 });
   assert.equal(match.updatedAt, "1700000000");
   assert.equal(match.status, 0);
@@ -133,19 +135,23 @@ function buildBetAccountData({
 function buildMatchAccountData({
   authority = new PublicKey("He5N26TPqsKvbG1UJgj5QgVrEroz4hMjPdytMvx677AA"),
   matchId,
+  tag = "",
   odds = { home: 6500, away: 3000, draw: 500 },
   updatedAt = 1_700_000_000,
   status,
+  oddsSource = 0,
 }) {
   return Buffer.concat([
     Buffer.alloc(8),
     authority.toBuffer(),
     writeString(matchId),
+    writeString(tag),
     writeU16(odds.home),
     writeU16(odds.away),
     writeU16(odds.draw),
     writeI64(BigInt(updatedAt)),
     Buffer.from([status]),
+    Buffer.from([oddsSource]),
     Buffer.from([255]),
   ]);
 }

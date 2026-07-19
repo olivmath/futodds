@@ -16,6 +16,7 @@ export type ReadinessSummary = {
 
 export type GameBackendMatch = {
   id: string;
+  oddsSource?: OddsSource;
   odds: {
     home: number;
     away: number;
@@ -27,9 +28,11 @@ export type GameBackendMatch = {
 export type GameOnChainMatch = {
   pda: string;
   matchId: string;
+  tag: string;
   oddsHome: number;
   oddsAway: number;
   oddsDraw: number;
+  oddsSource: number;
   updatedAt: bigint;
 };
 
@@ -39,8 +42,34 @@ export type GameBet = {
   status: number;
 };
 
+export type BettingViewBet = {
+  pda: string;
+  user: string;
+  matchId: string;
+  direction: Direction;
+  oddsAtEntry: number;
+  amount: bigint;
+  payout: bigint;
+  windowSecs: number;
+  createdAt: bigint;
+  expiresAt: bigint;
+  status: number;
+  nonce: number;
+};
+
+export type BettingView = {
+  bets: BettingViewBet[];
+  summary: {
+    open: number;
+    resolved: number;
+    totalAmount: bigint;
+    largestAmount: bigint;
+  };
+};
+
 export type GameRow = {
   matchId: string;
+  tag: string;
   pda: string | null;
   oddsHome: number;
   oddsAway: number;
@@ -49,6 +78,7 @@ export type GameRow = {
   backendUpdatedAt: string | null;
   totalStaked: bigint;
   openBets: number;
+  oddsSource: OddsSource;
   source: "backend" | "chain" | "backend+chain";
 };
 
@@ -100,13 +130,55 @@ export type CurrentOddsBar = {
 
 export type CreateGameFormInput = {
   matchId: string;
+  oddsSource: string;
   home: string;
   away: string;
   draw: string;
 };
 
 export type CreateGameFormResult =
-  | { ok: true; matchId: string; odds: { home: number; away: number; draw: number } }
+  | { ok: true; matchId: string; oddsSource: OddsSource; odds: { home: number; away: number; draw: number } }
+  | { ok: false; error: string };
+
+export type OddsSource = "random" | "txline";
+
+export type PlaceBetFormInput = {
+  matchId: string;
+  direction: string;
+  windowSecs: string;
+  amount: string;
+  nonce: string;
+};
+
+export type PlaceBetFormResult =
+  | {
+      ok: true;
+      matchId: string;
+      input: {
+        direction: Direction;
+        windowSecs: number;
+        amount: bigint;
+        nonce: number;
+      };
+    }
+  | { ok: false; error: string };
+
+export type CreatePoolFormInput = {
+  matchId: string;
+  feeRate: string;
+};
+
+export type CreatePoolFormResult =
+  | { ok: true; matchId: string; feeRate: number }
+  | { ok: false; error: string };
+
+export type DepositFormInput = {
+  matchId: string;
+  amount: string;
+};
+
+export type DepositFormResult =
+  | { ok: true; matchId: string; amount: bigint }
   | { ok: false; error: string };
 
 export function buildGameRows(input: {
@@ -127,6 +199,7 @@ export function buildGameRows(input: {
 
     return {
       matchId,
+      tag: chain?.tag ?? "",
       pda: chain?.pda ?? null,
       oddsHome: chain?.oddsHome ?? backend?.odds.home ?? 0,
       oddsAway: chain?.oddsAway ?? backend?.odds.away ?? 0,
@@ -135,6 +208,7 @@ export function buildGameRows(input: {
       backendUpdatedAt: backend?.updatedAt ?? null,
       totalStaked,
       openBets,
+      oddsSource: chain?.oddsSource === 1 ? "txline" : backend?.oddsSource ?? "random",
       source: chain && backend ? "backend+chain" : chain ? "chain" : "backend",
     };
   });
@@ -143,6 +217,24 @@ export function buildGameRows(input: {
 export function findGameRow(rows: GameRow[], matchId: string | null): GameRow | null {
   if (!matchId) return null;
   return rows.find((row) => row.matchId === matchId) ?? null;
+}
+
+export function buildBettingView(input: { matchId: string | null; bets: BettingViewBet[] }): BettingView {
+  const selectedBets = input.matchId
+    ? input.bets
+        .filter((bet) => bet.matchId === input.matchId)
+        .sort((a, b) => Number(b.createdAt - a.createdAt))
+    : [];
+
+  return {
+    bets: selectedBets,
+    summary: {
+      open: selectedBets.filter((bet) => bet.status === 0).length,
+      resolved: selectedBets.filter((bet) => bet.status !== 0).length,
+      totalAmount: selectedBets.reduce((total, bet) => total + bet.amount, 0n),
+      largestAmount: selectedBets.reduce((largest, bet) => (bet.amount > largest ? bet.amount : largest), 0n),
+    },
+  };
 }
 
 export function buildGameEvents(input: {
@@ -223,10 +315,17 @@ export function currentOddsBars(odds: { home: number; away: number; draw: number
 }
 
 export function parseCreateGameForm(input: CreateGameFormInput): CreateGameFormResult {
-  const matchId = input.matchId.trim();
-  if (!matchId) {
-    return { ok: false, error: "Informe o ID do jogo." };
+  if (input.oddsSource !== "random" && input.oddsSource !== "txline") {
+    return { ok: false, error: "Escolha TxLINE ou random." };
   }
+
+  if (input.oddsSource === "txline") {
+    const matchId = input.matchId.trim();
+    if (!matchId) return { ok: false, error: "Selecione uma fixture TxLINE." };
+    return { ok: true, matchId, oddsSource: "txline", odds: { home: 3334, away: 3333, draw: 3333 } };
+  }
+
+  const matchId = `game_${Date.now().toString(36)}`;
 
   const home = parseBasisPoints(input.home);
   const away = parseBasisPoints(input.away);
@@ -239,7 +338,74 @@ export function parseCreateGameForm(input: CreateGameFormInput): CreateGameFormR
     return { ok: false, error: "As odds precisam somar 10000." };
   }
 
-  return { ok: true, matchId, odds: { home, away, draw } };
+  return { ok: true, matchId, oddsSource: input.oddsSource, odds: { home, away, draw } };
+}
+
+export function parsePlaceBetForm(input: PlaceBetFormInput): PlaceBetFormResult {
+  const matchId = input.matchId.trim();
+  if (!matchId) {
+    return { ok: false, error: "Selecione um jogo." };
+  }
+
+  const direction = Number(input.direction);
+  if (direction !== 0 && direction !== 1) {
+    return { ok: false, error: "Escolha UP ou DOWN." };
+  }
+
+  const windowSecs = Number(input.windowSecs);
+  if (![60, 300, 600, 900].includes(windowSecs)) {
+    return { ok: false, error: "Use uma janela valida." };
+  }
+
+  let amount: bigint;
+  try {
+    amount = usdcToUnits(input.amount);
+  } catch {
+    return { ok: false, error: "Informe um valor USDC valido." };
+  }
+  if (amount < 1_000_000n) {
+    return { ok: false, error: "Aposta minima: 1 USDC." };
+  }
+
+  const nonce = Number(input.nonce);
+  if (!Number.isInteger(nonce) || nonce < 0) {
+    return { ok: false, error: "Informe um nonce valido." };
+  }
+
+  return { ok: true, matchId, input: { direction, windowSecs, amount, nonce } };
+}
+
+export function parseCreatePoolForm(input: CreatePoolFormInput): CreatePoolFormResult {
+  const matchId = input.matchId.trim();
+  if (!matchId) {
+    return { ok: false, error: "Selecione um jogo." };
+  }
+
+  const feeRate = Number(input.feeRate);
+  if (!Number.isInteger(feeRate) || feeRate < 1 || feeRate > 1000) {
+    return { ok: false, error: "Taxa entre 1 e 1000 bps." };
+  }
+
+  return { ok: true, matchId, feeRate };
+}
+
+export function parseDepositForm(input: DepositFormInput): DepositFormResult {
+  const matchId = input.matchId.trim();
+  if (!matchId) {
+    return { ok: false, error: "Selecione um jogo." };
+  }
+
+  let amount: bigint;
+  try {
+    amount = usdcToUnits(input.amount);
+  } catch {
+    return { ok: false, error: "Informe um valor USDC valido." };
+  }
+  if (amount < 1_000_000n) {
+    return { ok: false, error: "Deposito minimo: 1 USDC." };
+  }
+
+  return { ok: true, matchId, amount };
 }
 
 export function tradingChartSeries(odds: { home: number; away: number; draw: number }): TradingChartSeries[] {

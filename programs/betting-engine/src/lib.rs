@@ -3,7 +3,7 @@ use anchor_spl::associated_token::AssociatedToken;
 use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
 use oracle_adapter::MatchAccount;
 
-declare_id!("FBXnZZHR3ndsE2oYak4EQaFTPZsEC7d34C8tQfE7hkm4");
+declare_id!("H3ekojbWVFfzYnTmiNUejMkiB2pEQuf6wyH7QyyMQkz1");
 
 const VALID_WINDOWS: [u32; 4] = [60, 300, 600, 900];
 const MIN_BET_AMOUNT: u64 = 1_000_000; // 1 USDC (6 decimals)

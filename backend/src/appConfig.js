@@ -37,6 +37,7 @@ class AppConfig {
       rpcUrl: env.SOLANA_RPC_URL,
       keypairPath: expandHome(env.ORACLE_KEYPAIR),
       pollIntervalMs: Number(env.ODDS_POLL_INTERVAL_MS ?? 60_000),
+      settlementIntervalMs: Number(env.SETTLEMENT_INTERVAL_MS ?? 10_000),
       mint: new PublicKey(env.TEST_USDC_MINT ?? "CDAQWBQ3DciCWQDtyczAWvTp3xuyuL2t273LSdffjxB"),
       oracleProgramId: new PublicKey(env.ORACLE_PROGRAM_ID ?? DEFAULT_ORACLE_PROGRAM_ID),
       bettingProgramId: new PublicKey(env.BETTING_PROGRAM_ID ?? DEFAULT_BETTING_PROGRAM_ID),

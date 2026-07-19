@@ -11,7 +11,7 @@ vi.mock("@solana/web3.js", () => ({
 test("renders dashboard title when match found", () => {
   const mockMatch = {
     pda: "match-pda",
-    account: { id: "test-match", home_odds: 6500, away_odds: 3000, draw_odds: 500, status: 0 },
+    account: { matchId: "test-match", oddsHome: 6500, oddsAway: 3000, oddsDraw: 500, status: 0, oddsSource: 0 },
   };
   const mockConnection = {
     onLogs: vi.fn().mockReturnValue(1),
@@ -25,6 +25,7 @@ test("renders dashboard title when match found", () => {
       bets={[]}
       backendStatus={null}
       connection={mockConnection as any}
+      backendUrl="http://localhost:8787"
     />,
   );
 
@@ -44,6 +45,7 @@ test("shows no match message when match not found", () => {
       bets={[]}
       backendStatus={null}
       connection={mockConnection as any}
+      backendUrl="http://localhost:8787"
     />,
   );
 

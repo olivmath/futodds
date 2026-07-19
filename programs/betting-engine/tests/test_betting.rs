@@ -349,6 +349,7 @@ fn create_oracle_match(
             odds_home,
             odds_away,
             odds_draw,
+            tag: String::new(),
         }
         .data(),
         oracle_adapter::accounts::UpdateOdds {

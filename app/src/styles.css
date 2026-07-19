@@ -36,6 +36,12 @@ button.secondary {
   color: #17211c;
 }
 
+button.danger {
+  background: #dc2626;
+  color: #fff;
+  border: 1px solid #b91c1c;
+}
+
 button:disabled {
   cursor: not-allowed;
   opacity: 0.45;
@@ -46,7 +52,8 @@ button:focus-visible {
   outline-offset: 2px;
 }
 
-input {
+input,
+select {
   width: 100%;
   min-height: 42px;
   border: 1px solid #b9c7bd;
@@ -57,7 +64,8 @@ input {
   font: inherit;
 }
 
-input:focus-visible {
+input:focus-visible,
+select:focus-visible {
   outline: 3px solid #d9b84f;
   outline-offset: 2px;
 }
@@ -329,8 +337,9 @@ h1 {
     minmax(94px, 0.6fr)
     minmax(184px, 1fr)
     minmax(124px, 0.75fr)
+    minmax(104px, 0.65fr)
     minmax(120px, 0.75fr);
-  min-width: 930px;
+  min-width: 1030px;
   border-bottom: 1px solid #e0e7e2;
 }
 
@@ -454,7 +463,7 @@ h1 {
 .trading-chart {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(150px, 1fr) repeat(3, minmax(56px, 0.22fr));
+  grid-template-columns: 1fr auto;
   gap: 8px;
   align-items: stretch;
   min-height: 92px;
@@ -500,42 +509,58 @@ h1 {
   stroke: #ffae34;
 }
 
-.trading-ticker {
-  display: grid;
-  align-content: center;
-  gap: 5px;
-  min-width: 0;
-  border-left: 3px solid #839189;
-  padding: 8px 7px;
-  background: #f7faf6;
+.trading-bars {
+  display: flex;
+  gap: 6px;
+  align-items: flex-end;
+  padding: 4px 0;
+  min-width: 100px;
 }
 
-.trading-ticker.home {
-  border-left-color: #00a875;
+.trading-bar {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  height: 100%;
+  justify-content: flex-end;
 }
 
-.trading-ticker.away {
-  border-left-color: #156fd1;
+.trading-bar .bar-fill {
+  width: 100%;
+  border-radius: 3px 3px 0 0;
+  min-height: 4px;
+  transition: height 0.3s ease;
 }
 
-.trading-ticker.draw {
-  border-left-color: #f28c18;
+.trading-bar.home .bar-fill {
+  background: #00d18f;
 }
 
-.trading-ticker span {
-  color: #5c6b62;
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0;
-  text-transform: uppercase;
+.trading-bar.away .bar-fill {
+  background: #35a2ff;
 }
 
-.trading-ticker strong {
+.trading-bar.draw .bar-fill {
+  background: #ffae34;
+}
+
+.trading-bar .bar-value {
   color: #17211c;
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  font-size: 13px;
-  line-height: 1;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.trading-bar .bar-label {
+  color: #5c6b62;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .odds-segment.home,
@@ -599,6 +624,18 @@ h1 {
   color: #735b12;
 }
 
+.source-badge.odds-txline {
+  border-color: #8bb6d9;
+  background: #eef6ff;
+  color: #174d7d;
+}
+
+.source-badge.odds-random {
+  border-color: #c9b06d;
+  background: #fff8e8;
+  color: #70540f;
+}
+
 .empty-state {
   padding: 28px 14px;
   color: #53655b;
@@ -636,9 +673,13 @@ h1 {
 
 .create-grid {
   display: grid;
-  grid-template-columns: minmax(220px, 1.4fr) repeat(3, minmax(120px, 0.6fr));
+  grid-template-columns: minmax(220px, 1.4fr) minmax(130px, 0.65fr) repeat(3, minmax(120px, 0.6fr));
   gap: 12px;
   margin-top: 16px;
+}
+
+.create-grid.bet-grid {
+  grid-template-columns: minmax(220px, 1.25fr) repeat(4, minmax(110px, 0.55fr));
 }
 
 .field {
@@ -661,10 +702,118 @@ h1 {
   max-width: 520px;
 }
 
+.txline-selected {
+  padding: 8px 12px;
+  background: #e8f4ec;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #1a5c3a;
+}
+
 .create-actions {
   display: flex;
   justify-content: flex-end;
   margin-top: 14px;
+}
+
+.betting-board {
+  margin-top: 16px;
+  overflow: hidden;
+  border: 1px solid #d8e1da;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.betting-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0;
+  border-bottom: 1px solid #d8e1da;
+}
+
+.betting-summary .metric-card {
+  border: 0;
+  border-right: 1px solid #edf2ee;
+  border-radius: 0;
+}
+
+.betting-summary .metric-card:last-child {
+  border-right: 0;
+}
+
+.bets-table {
+  display: grid;
+  overflow: auto;
+}
+
+.bets-row {
+  display: grid;
+  grid-template-columns: 108px 78px 96px 92px 160px minmax(118px, 1fr) 68px;
+  gap: 10px;
+  align-items: center;
+  min-width: 760px;
+  border-bottom: 1px solid #edf2ee;
+  padding: 10px 12px;
+}
+
+.bets-row:last-child {
+  border-bottom: 0;
+}
+
+.bets-head {
+  background: #f5f8f2;
+}
+
+.bets-head span,
+.bets-row code,
+.bets-row strong {
+  color: #5c6b62;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.bets-row strong,
+.bets-row code {
+  color: #17211c;
+  overflow-wrap: anywhere;
+  text-transform: none;
+}
+
+.bet-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  border: 1px solid #cfd9d2;
+  border-radius: 999px;
+  padding: 3px 9px;
+  color: #17211c;
+  background: #f6f8f4;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.bet-status.open {
+  border-color: #8fc1a4;
+  background: #edf8f1;
+  color: #17613a;
+}
+
+.bet-status.won {
+  border-color: #9bb7d7;
+  background: #edf4fb;
+  color: #244f7d;
+}
+
+.bet-status.lost {
+  border-color: #dfb1a8;
+  background: #fff0ed;
+  color: #9b3525;
 }
 
 .game-detail {
@@ -675,21 +824,13 @@ h1 {
 }
 
 .game-detail .trading-chart {
-  grid-template-columns: minmax(260px, 1fr) repeat(3, minmax(92px, 0.22fr));
+  grid-template-columns: 1fr 140px;
   min-height: 190px;
   padding: 12px;
 }
 
 .game-detail .trading-chart svg {
   min-height: 164px;
-}
-
-.game-detail .trading-ticker {
-  padding: 12px;
-}
-
-.game-detail .trading-ticker strong {
-  font-size: 18px;
 }
 
 .detail-head {
@@ -874,6 +1015,18 @@ h1 {
   .create-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .create-grid.bet-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .betting-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .betting-summary .metric-card:nth-child(2) {
+    border-right: 0;
+  }
 }
 
 @media (max-width: 560px) {
@@ -900,6 +1053,10 @@ h1 {
     grid-template-columns: 1fr;
   }
 
+  .create-grid.bet-grid {
+    grid-template-columns: 1fr;
+  }
+
   .detail-grid,
   .detail-grid.two {
     grid-template-columns: 1fr;
@@ -909,8 +1066,33 @@ h1 {
     grid-template-columns: 1fr;
   }
 
+  .betting-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .betting-summary .metric-card {
+    border-right: 0;
+    border-bottom: 1px solid #edf2ee;
+  }
+
+  .betting-summary .metric-card:last-child {
+    border-bottom: 0;
+  }
+
   .trading-chart,
   .game-detail .trading-chart {
     grid-template-columns: 1fr;
   }
+}
+
+.pool-section-title {
+  margin: 0.5rem 0 0.25rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.pool-divider {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 1.25rem 0;
 }

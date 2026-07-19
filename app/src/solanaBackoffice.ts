@@ -14,12 +14,14 @@ export const ASSOCIATED_TOKEN_PROGRAM_ID = new PublicKey("ATokenGPvbdGVxr1b2hvZb
 export const TEST_USDC_MINT = new PublicKey("CDAQWBQ3DciCWQDtyczAWvTp3xuyuL2t273LSdffjxB");
 export const TESTNET_RPC_URL = "https://api.testnet.solana.com";
 export const DEFAULT_BACKEND_URL = "http://localhost:8787";
-export const MATCH_ACCOUNT_SIZE = 95;
+export const MATCH_ACCOUNT_SIZE = 165;
 export const BET_ACCOUNT_SIZE = 157;
 
 const UPDATE_ODDS_DISCRIMINATOR = Uint8Array.from([185, 97, 196, 202, 171, 32, 3, 160]);
 const PLACE_BET_DISCRIMINATOR = Uint8Array.from([222, 62, 67, 220, 63, 166, 126, 33]);
 const SETTLE_BET_DISCRIMINATOR = Uint8Array.from([115, 55, 234, 177, 227, 4, 10, 67]);
+const CREATE_POOL_DISCRIMINATOR = Uint8Array.from([233, 146, 209, 142, 207, 104, 64, 188]);
+const DEPOSIT_DISCRIMINATOR = Uint8Array.from([242, 35, 198, 137, 82, 225, 242, 182]);
 const ODDS_UPDATED_EVENT_DISCRIMINATOR = Uint8Array.from([156, 39, 18, 117, 46, 12, 46, 218]);
 const BET_SETTLED_EVENT_DISCRIMINATOR = Uint8Array.from([57, 145, 224, 160, 62, 119, 227, 206]);
 
@@ -34,10 +36,13 @@ export type Direction = 0 | 1;
 export type MatchAccount = {
   authority: PublicKey;
   matchId: string;
+  tag: string;
   oddsHome: number;
   oddsAway: number;
   oddsDraw: number;
   updatedAt: bigint;
+  status: number;
+  oddsSource: number;
   bump: number;
 };
 
@@ -68,6 +73,7 @@ export type OddsUpdatedEvent = {
   type: "OddsUpdated";
   authority: PublicKey;
   matchId: string;
+  tag: string;
   oddsHome: number;
   oddsAway: number;
   oddsDraw: number;
@@ -140,9 +146,23 @@ export function deriveBetPda(matchId: string, user: PublicKey, nonce: number): P
   )[0];
 }
 
+export function derivePoolPda(matchId: string): PublicKey {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from("pool"), Buffer.from(matchId)],
+    BETTING_PROGRAM_ID,
+  )[0];
+}
+
 export function deriveVaultAuthorityPda(matchId: string): PublicKey {
   return PublicKey.findProgramAddressSync(
-    [Buffer.from("escrow"), Buffer.from(matchId)],
+    [Buffer.from("vault"), Buffer.from(matchId)],
+    BETTING_PROGRAM_ID,
+  )[0];
+}
+
+export function deriveLpPositionPda(pool: PublicKey, owner: PublicKey): PublicKey {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from("lp"), pool.toBuffer(), owner.toBuffer()],
     BETTING_PROGRAM_ID,
   )[0];
 }
@@ -154,9 +174,10 @@ export function deriveAssociatedTokenAddress(owner: PublicKey, mint: PublicKey):
   )[0];
 }
 
-export function encodeUpdateOddsData(matchId: string, odds: OddsInput): Buffer {
+export function encodeUpdateOddsData(matchId: string, odds: OddsInput, tag = "", oddsSource = 0): Buffer {
   const matchBytes = Buffer.from(matchId, "utf8");
-  const data = Buffer.alloc(8 + 4 + matchBytes.length + 6);
+  const tagBytes = Buffer.from(tag, "utf8");
+  const data = Buffer.alloc(8 + 4 + matchBytes.length + 6 + 4 + tagBytes.length + 1);
   let offset = 0;
   Buffer.from(UPDATE_ODDS_DISCRIMINATOR).copy(data, offset);
   offset += 8;
@@ -169,6 +190,12 @@ export function encodeUpdateOddsData(matchId: string, odds: OddsInput): Buffer {
   data.writeUInt16LE(odds.away, offset);
   offset += 2;
   data.writeUInt16LE(odds.draw, offset);
+  offset += 2;
+  data.writeUInt32LE(tagBytes.length, offset);
+  offset += 4;
+  tagBytes.copy(data, offset);
+  offset += tagBytes.length;
+  data.writeUInt8(oddsSource, offset);
   return data;
 }
 
@@ -194,6 +221,27 @@ export function encodeSettleBetData(oddsAtExpiryHome: number): Buffer {
   return data;
 }
 
+export function encodeCreatePoolData(matchId: string, feeRate: number): Buffer {
+  const matchBytes = Buffer.from(matchId, "utf8");
+  const data = Buffer.alloc(8 + 4 + matchBytes.length + 2);
+  let offset = 0;
+  Buffer.from(CREATE_POOL_DISCRIMINATOR).copy(data, offset);
+  offset += 8;
+  data.writeUInt32LE(matchBytes.length, offset);
+  offset += 4;
+  matchBytes.copy(data, offset);
+  offset += matchBytes.length;
+  data.writeUInt16LE(feeRate, offset);
+  return data;
+}
+
+export function encodeDepositData(amount: bigint): Buffer {
+  const data = Buffer.alloc(8 + 8);
+  Buffer.from(DEPOSIT_DISCRIMINATOR).copy(data, 0);
+  data.writeBigUInt64LE(amount, 8);
+  return data;
+}
+
 export function encodeMintToData(amount: bigint): Buffer {
   const data = Buffer.alloc(9);
   data.writeUInt8(7, 0);
@@ -213,6 +261,43 @@ export function buildUpdateOddsInstruction(authority: PublicKey, matchId: string
   });
 }
 
+export function buildCreatePoolInstruction(authority: PublicKey, matchId: string, mint: PublicKey, feeRate: number): TransactionInstruction {
+  const vaultAuthority = deriveVaultAuthorityPda(matchId);
+  return new TransactionInstruction({
+    programId: BETTING_PROGRAM_ID,
+    keys: [
+      { pubkey: authority, isSigner: true, isWritable: true },
+      { pubkey: derivePoolPda(matchId), isSigner: false, isWritable: true },
+      { pubkey: mint, isSigner: false, isWritable: false },
+      { pubkey: vaultAuthority, isSigner: false, isWritable: false },
+      { pubkey: deriveAssociatedTokenAddress(vaultAuthority, mint), isSigner: false, isWritable: true },
+      { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+      { pubkey: ASSOCIATED_TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    ],
+    data: encodeCreatePoolData(matchId, feeRate),
+  });
+}
+
+export function buildDepositInstruction(owner: PublicKey, matchId: string, mint: PublicKey, amount: bigint): TransactionInstruction {
+  const poolPda = derivePoolPda(matchId);
+  const vaultAuthority = deriveVaultAuthorityPda(matchId);
+  return new TransactionInstruction({
+    programId: BETTING_PROGRAM_ID,
+    keys: [
+      { pubkey: owner, isSigner: true, isWritable: true },
+      { pubkey: poolPda, isSigner: false, isWritable: true },
+      { pubkey: deriveLpPositionPda(poolPda, owner), isSigner: false, isWritable: true },
+      { pubkey: mint, isSigner: false, isWritable: false },
+      { pubkey: deriveAssociatedTokenAddress(vaultAuthority, mint), isSigner: false, isWritable: true },
+      { pubkey: deriveAssociatedTokenAddress(owner, mint), isSigner: false, isWritable: true },
+      { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    ],
+    data: encodeDepositData(amount),
+  });
+}
+
 export function buildPlaceBetInstruction(user: PublicKey, matchId: string, mint: PublicKey, input: BetInput): TransactionInstruction {
   const vaultAuthority = deriveVaultAuthorityPda(matchId);
   return new TransactionInstruction({
@@ -222,11 +307,11 @@ export function buildPlaceBetInstruction(user: PublicKey, matchId: string, mint:
       { pubkey: deriveBetPda(matchId, user, input.nonce), isSigner: false, isWritable: true },
       { pubkey: deriveMatchPda(matchId), isSigner: false, isWritable: false },
       { pubkey: mint, isSigner: false, isWritable: false },
+      { pubkey: derivePoolPda(matchId), isSigner: false, isWritable: true },
       { pubkey: vaultAuthority, isSigner: false, isWritable: false },
       { pubkey: deriveAssociatedTokenAddress(vaultAuthority, mint), isSigner: false, isWritable: true },
       { pubkey: deriveAssociatedTokenAddress(user, mint), isSigner: false, isWritable: true },
       { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
-      { pubkey: ASSOCIATED_TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
     ],
     data: encodePlaceBetData(input),
@@ -304,6 +389,10 @@ export function decodeMatchAccount(data: Buffer | Uint8Array): MatchAccount {
   offset += 4;
   const matchId = buffer.subarray(offset, offset + matchIdLength).toString("utf8");
   offset += matchIdLength;
+  const tagLength = buffer.readUInt32LE(offset);
+  offset += 4;
+  const tag = buffer.subarray(offset, offset + tagLength).toString("utf8");
+  offset += tagLength;
   const oddsHome = buffer.readUInt16LE(offset);
   offset += 2;
   const oddsAway = buffer.readUInt16LE(offset);
@@ -312,8 +401,12 @@ export function decodeMatchAccount(data: Buffer | Uint8Array): MatchAccount {
   offset += 2;
   const updatedAt = buffer.readBigInt64LE(offset);
   offset += 8;
+  const status = buffer.readUInt8(offset);
+  offset += 1;
+  const oddsSource = buffer.readUInt8(offset);
+  offset += 1;
   const bump = buffer.readUInt8(offset);
-  return { authority, matchId, oddsHome, oddsAway, oddsDraw, updatedAt, bump };
+  return { authority, matchId, tag, oddsHome, oddsAway, oddsDraw, updatedAt, status, oddsSource, bump };
 }
 
 export function decodeBetAccount(data: Buffer | Uint8Array): BetAccount {
@@ -349,6 +442,10 @@ export function decodeBetAccount(data: Buffer | Uint8Array): BetAccount {
   return { user, authority, matchId, direction, oddsAtEntry, amount, payout, windowSecs, createdAt, expiresAt, status, nonce, bump };
 }
 
+export function decodeTokenAccountAmount(data: Buffer | Uint8Array): bigint {
+  return Buffer.from(data).readBigUInt64LE(64);
+}
+
 export function parseAnchorEventFromLogs(logs: string[]): AnchorBackofficeEvent | null {
   for (const log of logs) {
     if (!log.startsWith("Program data: ")) {
@@ -377,6 +474,8 @@ function decodeOddsUpdatedEvent(payload: Buffer): OddsUpdatedEvent {
   offset += 32;
   const matchId = readString(payload, offset);
   offset = matchId.nextOffset;
+  const tag = readString(payload, offset);
+  offset = tag.nextOffset;
   const oddsHome = payload.readUInt16LE(offset);
   offset += 2;
   const oddsAway = payload.readUInt16LE(offset);
@@ -384,7 +483,7 @@ function decodeOddsUpdatedEvent(payload: Buffer): OddsUpdatedEvent {
   const oddsDraw = payload.readUInt16LE(offset);
   offset += 2;
   const updatedAt = payload.readBigInt64LE(offset);
-  return { type: "OddsUpdated", authority, matchId: matchId.value, oddsHome, oddsAway, oddsDraw, updatedAt };
+  return { type: "OddsUpdated", authority, matchId: matchId.value, tag: tag.value, oddsHome, oddsAway, oddsDraw, updatedAt };
 }
 
 function decodeBetSettledEvent(payload: Buffer): BetSettledEvent {

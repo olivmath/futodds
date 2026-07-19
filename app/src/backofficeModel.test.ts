@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   betStatusLabel,
+  buildBettingView,
   buildGameEvents,
   buildGameRows,
   directionLabel,
@@ -11,6 +12,7 @@ import {
   currentOddsBars,
   oddsChartSegments,
   parseCreateGameForm,
+  parsePlaceBetForm,
   readinessSummary,
   shortenAddress,
   tradingChartSeries,
@@ -32,16 +34,18 @@ describe("backoffice model", () => {
   it("builds game rows with backend, on-chain and staked totals", () => {
     const rows = buildGameRows({
       backendMatches: [
-        { id: "match_1", odds: { home: 6500, away: 3000, draw: 500 }, updatedAt: "2026-07-19T12:00:00.000Z" },
-        { id: "match_2", odds: { home: 5200, away: 4100, draw: 700 } },
+        { id: "match_1", oddsSource: "txline", odds: { home: 6500, away: 3000, draw: 500 }, updatedAt: "2026-07-19T12:00:00.000Z" },
+        { id: "match_2", oddsSource: "random", odds: { home: 5200, away: 4100, draw: 700 } },
       ],
       onChainMatches: [
         {
           pda: "matchPda1",
           matchId: "match_1",
+          tag: "Australia vs Brazil",
           oddsHome: 6600,
           oddsAway: 2900,
           oddsDraw: 500,
+          oddsSource: 1,
           updatedAt: 1_700_000_000n,
         },
       ],
@@ -55,6 +59,7 @@ describe("backoffice model", () => {
     expect(rows).toEqual([
       {
         matchId: "match_1",
+        tag: "Australia vs Brazil",
         pda: "matchPda1",
         oddsHome: 6600,
         oddsAway: 2900,
@@ -63,10 +68,12 @@ describe("backoffice model", () => {
         backendUpdatedAt: "2026-07-19T12:00:00.000Z",
         totalStaked: 3_500_000n,
         openBets: 1,
+        oddsSource: "txline",
         source: "backend+chain",
       },
       {
         matchId: "match_2",
+        tag: "",
         pda: null,
         oddsHome: 5200,
         oddsAway: 4100,
@@ -75,9 +82,68 @@ describe("backoffice model", () => {
         backendUpdatedAt: null,
         totalStaked: 3_000_000n,
         openBets: 1,
+        oddsSource: "random",
         source: "backend",
       },
     ]);
+  });
+
+  it("builds the betting tab view for the selected match", () => {
+    const view = buildBettingView({
+      matchId: "match_1",
+      bets: [
+        {
+          pda: "bet-old",
+          user: "user-old",
+          matchId: "match_1",
+          direction: 0,
+          oddsAtEntry: 6400,
+          amount: 1_000_000n,
+          payout: 0n,
+          windowSecs: 300,
+          createdAt: 100n,
+          expiresAt: 400n,
+          status: 0,
+          nonce: 1,
+        },
+        {
+          pda: "bet-other",
+          user: "user-other",
+          matchId: "match_2",
+          direction: 1,
+          oddsAtEntry: 5000,
+          amount: 5_000_000n,
+          payout: 0n,
+          windowSecs: 300,
+          createdAt: 300n,
+          expiresAt: 600n,
+          status: 0,
+          nonce: 2,
+        },
+        {
+          pda: "bet-new",
+          user: "user-new",
+          matchId: "match_1",
+          direction: 1,
+          oddsAtEntry: 6600,
+          amount: 2_500_000n,
+          payout: 3_000_000n,
+          windowSecs: 600,
+          createdAt: 200n,
+          expiresAt: 800n,
+          status: 1,
+          nonce: 3,
+        },
+      ],
+    });
+
+    expect(view.summary).toEqual({
+      open: 1,
+      resolved: 1,
+      totalAmount: 3_500_000n,
+      largestAmount: 2_500_000n,
+    });
+    expect(view.bets.map((bet) => bet.pda)).toEqual(["bet-new", "bet-old"]);
   });
 
   it("formats odds and token values for dashboard cards", () => {
@@ -91,25 +157,71 @@ describe("backoffice model", () => {
   });
 
   it("parses create game form odds in basis points", () => {
-    expect(parseCreateGameForm({ matchId: "match_3", home: "9000", away: "500", draw: "500" })).toEqual({
+    expect(parseCreateGameForm({ matchId: "match_3", oddsSource: "random", home: "9000", away: "500", draw: "500" })).toEqual({
       ok: true,
       matchId: "match_3",
+      oddsSource: "random",
       odds: { home: 9000, away: 500, draw: 500 },
     });
   });
 
+  it("txline source uses placeholder odds and skips bps validation", () => {
+    expect(parseCreateGameForm({ matchId: "18182808", oddsSource: "txline", home: "", away: "", draw: "" })).toEqual({
+      ok: true,
+      matchId: "18182808",
+      oddsSource: "txline",
+      odds: { home: 3334, away: 3333, draw: 3333 },
+    });
+  });
+
   it("rejects create game form values with invalid odds", () => {
-    expect(parseCreateGameForm({ matchId: " ", home: "9000", away: "500", draw: "500" })).toEqual({
+    expect(parseCreateGameForm({ matchId: " ", oddsSource: "random", home: "9000", away: "500", draw: "500" })).toEqual({
       ok: false,
       error: "Informe o ID do jogo.",
     });
-    expect(parseCreateGameForm({ matchId: "match_3", home: "9000", away: "500", draw: "600" })).toEqual({
+    expect(parseCreateGameForm({ matchId: "match_3", oddsSource: "random", home: "9000", away: "500", draw: "600" })).toEqual({
       ok: false,
       error: "As odds precisam somar 10000.",
     });
-    expect(parseCreateGameForm({ matchId: "match_3", home: "abc", away: "500", draw: "500" })).toEqual({
+    expect(parseCreateGameForm({ matchId: "match_3", oddsSource: "manual", home: "9000", away: "500", draw: "500" })).toEqual({
+      ok: false,
+      error: "Escolha TxLINE ou random.",
+    });
+    expect(parseCreateGameForm({ matchId: "match_3", oddsSource: "random", home: "abc", away: "500", draw: "500" })).toEqual({
       ok: false,
       error: "Use numeros inteiros entre 0 e 10000.",
+    });
+  });
+
+  it("parses place bet form into instruction input", () => {
+    expect(parsePlaceBetForm({ matchId: "bra-ale", direction: "1", windowSecs: "300", amount: "2.5", nonce: "42" })).toEqual({
+      ok: true,
+      matchId: "bra-ale",
+      input: {
+        direction: 1,
+        windowSecs: 300,
+        amount: 2_500_000n,
+        nonce: 42,
+      },
+    });
+  });
+
+  it("rejects invalid place bet form values", () => {
+    expect(parsePlaceBetForm({ matchId: "", direction: "0", windowSecs: "300", amount: "1", nonce: "1" })).toEqual({
+      ok: false,
+      error: "Selecione um jogo.",
+    });
+    expect(parsePlaceBetForm({ matchId: "bra-ale", direction: "2", windowSecs: "300", amount: "1", nonce: "1" })).toEqual({
+      ok: false,
+      error: "Escolha UP ou DOWN.",
+    });
+    expect(parsePlaceBetForm({ matchId: "bra-ale", direction: "1", windowSecs: "30", amount: "1", nonce: "1" })).toEqual({
+      ok: false,
+      error: "Use uma janela valida.",
+    });
+    expect(parsePlaceBetForm({ matchId: "bra-ale", direction: "1", windowSecs: "300", amount: "0.5", nonce: "1" })).toEqual({
+      ok: false,
+      error: "Aposta minima: 1 USDC.",
     });
   });
 
@@ -157,7 +269,7 @@ describe("backoffice model", () => {
 
   it("finds the selected game row by match id", () => {
     const rows = buildGameRows({
-      backendMatches: [{ id: "match_2", odds: { home: 5200, away: 4100, draw: 700 } }],
+      backendMatches: [{ id: "match_2", oddsSource: "random", odds: { home: 5200, away: 4100, draw: 700 } }],
       onChainMatches: [],
       bets: [],
     });

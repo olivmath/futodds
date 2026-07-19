@@ -35,8 +35,7 @@ fn setup() -> TestEnv {
         env!("CARGO_TARGET_TMPDIR"),
         "/../deploy/liquidity_pool.so"
     ));
-    svm.add_program(liquidity_pool::id(), pool_bytes)
-        .unwrap();
+    svm.add_program(liquidity_pool::id(), pool_bytes).unwrap();
 
     let authority = Keypair::new();
     svm.airdrop(&authority.pubkey(), 10_000_000_000).unwrap();
@@ -90,13 +89,7 @@ fn create_ata(svm: &mut LiteSVM, payer: &Keypair, owner: &Pubkey, mint: &Pubkey)
     get_associated_token_address(owner, mint)
 }
 
-fn mint_to(
-    svm: &mut LiteSVM,
-    mint: &Pubkey,
-    dest: &Pubkey,
-    mint_authority: &Keypair,
-    amount: u64,
-) {
+fn mint_to(svm: &mut LiteSVM, mint: &Pubkey, dest: &Pubkey, mint_authority: &Keypair, amount: u64) {
     let ix = spl_token::instruction::mint_to(
         &spl_token::ID,
         mint,

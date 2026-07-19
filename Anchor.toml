@@ -7,12 +7,17 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-betting_engine = "FBXnZZHR3ndsE2oYak4EQaFTPZsEC7d34C8tQfE7hkm4"
-liquidity_pool = "B4LZJT28Ucqe3eCpSrhQCiBhZ2dfCxH1eMVWfQqShgy9"
-oracle_adapter = "BfWcrr3Mv4StpqSyaMUZtsLLUTM9cLkNeaARRdwSFSCN"
+betting_engine = "67mbZdR3KxZxRxgKDMT7JbxtYU92C1y81Q4KKGQRkMMY"
+liquidity_pool = "3wdXrPtrpX44sAhfZbK9MJVTwQ2ufai8pQ1C8TVHPexV"
+oracle_adapter = "HwDVX9fTTxmnLBJwtig7ugsWuiqLh14pj71WtxQaaSSa"
+
+[programs.testnet]
+betting_engine = "H3ekojbWVFfzYnTmiNUejMkiB2pEQuf6wyH7QyyMQkz1"
+liquidity_pool = "3jeWz6WQaM8DG5jRqoVff4FtsMVRjg9peGGMjjgUYRMY"
+oracle_adapter = "Df1gfgegKEBJvKtyHdxUiwaohUkDQj9Pigdpgszk7XUL"
 
 [provider]
-cluster = "localnet"
+cluster = "testnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]

@@ -99,8 +99,21 @@ export function createApp({
         res.status(503).json({ error: "createMatch not available" });
         return;
       }
+      if (oddsSource === "txline") {
+        if (!txlineClient) {
+          res.status(503).json({ error: "TxLINE not configured" });
+          return;
+        }
+        const fixtures = await txlineClient.fetchFixturesSnapshot({});
+        const validIds = new Set(fixtures.map((f) => String(f.FixtureId)));
+        if (!validIds.has(matchId)) {
+          res.status(400).json({ error: `FixtureId ${matchId} not found in TxLINE. Available: ${[...validIds].join(", ")}` });
+          return;
+        }
+      }
       const odds = req.body?.odds ?? { home: 3334, away: 3333, draw: 3333 };
-      const signature = await createMatch(matchId, odds, tag);
+      const oddsSourceCode = oddsSource === "txline" ? 1 : 0;
+      const signature = await createMatch(matchId, odds, tag, oddsSourceCode);
       store.setMatchOddsSource(matchId, oddsSource);
       store.recordTx({ type: "create_match", matchId, signature });
       logger.info("admin.match.create", { matchId, tag, oddsSource, signature });
@@ -135,6 +148,16 @@ export function createApp({
     poller.stop();
     res.json({ running: false });
   });
+  app.post("/settlement/start", (_req, res) => {
+    logger.info("admin.settlement.start");
+    settlementWorker.start();
+    res.json({ running: true });
+  });
+  app.post("/settlement/stop", (_req, res) => {
+    logger.info("admin.settlement.stop");
+    settlementWorker.stop();
+    res.json({ running: false });
+  });
   app.post("/settlement/run-once", async (_req, res, next) => {
     try {
       logger.info("admin.settlement.run_once");
@@ -146,40 +169,36 @@ export function createApp({
   app.post("/stream/start/:matchId", async (req, res, next) => {
     try {
       const matchId = req.params.matchId;
-      if (!txlineStream) {
-        res.status(503).json({ error: "TxLINE stream not configured" });
-        return;
-      }
       const match = store.getMatch(matchId);
       if (!match) {
         res.status(404).json({ error: `Match not found: ${matchId}` });
         return;
       }
-      if (match.oddsSource !== "txline") {
-        res.status(400).json({ error: `Match ${matchId} is not configured for TxLINE` });
-        return;
-      }
-      const fixtureId = store.getFixtureId(matchId);
-      if (!fixtureId) {
-        res.status(400).json({ error: `Match ${matchId} has no fixtureId configured` });
-        return;
-      }
-      if (!txlineStream.isConnected()) {
-        try {
-          await txlineStream.connect();
-        } catch (error) {
-          logger.error("stream.error", { matchId, error: error instanceof Error ? error.message : String(error) });
-          res.status(503).json({ error: "Failed to connect to TxLINE stream" });
+
+      if (match.oddsSource === "txline") {
+        if (!txlineStream) {
+          res.status(503).json({ error: "TxLINE stream not configured" });
           return;
         }
-      }
-      txlineStream.onOdds(fixtureId, (odds) => {
-        store.setLatestOdds(matchId, {
-          home: odds.Prices?.[0] ?? 0,
-          away: odds.Prices?.[1] ?? 0,
-          draw: odds.Prices?.[2] ?? 0,
+        const fixtureId = store.getFixtureId(matchId) ?? matchId;
+        if (!txlineStream.isConnected()) {
+          try {
+            await txlineStream.connect();
+          } catch (error) {
+            logger.error("stream.error", { matchId, error: error instanceof Error ? error.message : String(error) });
+            res.status(503).json({ error: "Failed to connect to TxLINE stream" });
+            return;
+          }
+        }
+        txlineStream.onOdds(fixtureId, (odds) => {
+          store.setLatestOdds(matchId, {
+            home: odds.Prices?.[0] ?? 0,
+            away: odds.Prices?.[1] ?? 0,
+            draw: odds.Prices?.[2] ?? 0,
+          });
         });
-      });
+      }
+
       store.setStreamStatus(matchId, "active");
       logger.info("stream.started", { matchId, fixtureId });
       res.json({ matchId, status: "active", fixtureId });
@@ -212,7 +231,7 @@ export function createApp({
         res.status(503).json({ error: "TxLINE stream not configured" });
         return;
       }
-      const fixtureId = store.getFixtureId(matchId);
+      const fixtureId = store.getFixtureId(matchId) ?? matchId;
       if (!fixtureId) {
         res.status(400).json({ error: `Match ${matchId} has no fixtureId configured` });
         return;
@@ -300,6 +319,7 @@ export function createRuntime(env = process.env) {
   const settlementWorker = createSettlementWorker({
     store,
     logger: defaultLogger,
+    intervalMs: config.solana.settlementIntervalMs,
     fetchOpenBets: () => fetchOpenBets(connection),
     settleBet: (bet, oddsAtExpiryHome) =>
       sendSettleBet(connection, authority, config.solana.mint, bet, oddsAtExpiryHome),
@@ -309,7 +329,7 @@ export function createRuntime(env = process.env) {
 
   const initialize = () => syncMatches();
 
-  const createMatch = (matchId, odds, tag = "") => sendUpdateOdds(connection, authority, matchId, odds, tag);
+  const createMatch = (matchId, odds, tag = "", oddsSource = 0) => sendUpdateOdds(connection, authority, matchId, odds, tag, oddsSource);
   const closeMatch = (matchId) => sendSetMatchStatus(connection, authority, matchId, 1);
 
   return { config, store, poller, settlementWorker, txlineClient, txlineStream, createMatch, closeMatch, healthCheck, initialize };
@@ -333,6 +353,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       })
       .then((matches) => {
         runtime.poller.start();
+        runtime.settlementWorker.start();
         app.listen(runtime.config.backend.port, () => {
           defaultLogger.info("app.started", {
             port: runtime.config.backend.port,

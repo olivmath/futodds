@@ -8,10 +8,13 @@
     "dev:local": "set -a; . ./.env.local; set +a; node --watch src/server.js",
     "start": "node src/server.js",
     "start:local": "set -a; . ./.env.local; set +a; node src/server.js",
+    "start:testnet": "export $(grep -v '^#' .env.testnet | xargs) && node src/server.js",
     "test": "node --test"
   },
   "dependencies": {
     "@solana/web3.js": "^1.98.4",
-    "express": "^4.19.2"
+    "eventsource": "^4.1.0",
+    "express": "^4.19.2",
+    "tweetnacl": "^1.0.3"
   }
 }
