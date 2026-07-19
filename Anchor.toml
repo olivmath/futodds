@@ -9,6 +9,7 @@ skip-lint = false
 [programs.localnet]
 oracle_adapter = "6BVWCCQDjQDcjQYhmbzJ9DFWY9LyDojM3mYoWivrASaG"
 betting_engine = "GoccKzkMS5BWRmrbLdGKzqKUUcksZB3DftW82F7boCoQ"
+liquidity_pool = "8AAJ5doFwKPNHJ3gZyrfkJTM32ZQB81VU76dHsWvyi4L"
 
 [provider]
 cluster = "localnet"

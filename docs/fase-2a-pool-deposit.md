@@ -53,3 +53,7 @@ pub struct LpPosition {
 - [ ] `anchor test` — 5/5 novos + 16 anteriores passando
 - [ ] LpPosition PDA criado com shares corretas
 - [ ] USDC no vault confere com total deposits
+
+## Status
+
+Concluida no programa `liquidity-pool` (PR feat/pool-deposit) e coberta por testes Rust em `programs/liquidity-pool/tests/test_pool.rs` (11 testes: matriz da fase + fee-rate invalido, match inexistente, pool em partida settled, deposito repetido, saldo insuficiente). Decisao: shares via `LpPosition` PDA conforme esta spec; a matematica de shares usa u128 intermediario. `create_pool` e permissionless (quem cria paga o rent), mas `pool.authority` e a authority do oraculo.

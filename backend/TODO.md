@@ -38,13 +38,13 @@ Fixes to `oracle-adapter` and `betting-engine` as they exist today. Do these bef
 The pool is what the investor web app (`web-investor/`) deposits into — it blocks that entire frontend, so it comes first.
 
 ### 2a — Create + deposit (`docs/fase-2a-pool-deposit.md`)
-- [ ] Scaffold `programs/liquidity-pool` in the Anchor workspace (`Anchor.toml`, `Cargo.toml` member)
-- [ ] `create_pool(match_id)` — Pool PDA (`["pool", match_id]`), USDC vault (ATA owned by pool PDA), LP share SPL mint (mint authority = pool PDA)
-- [ ] `deposit(amount)` — transfer USDC user→vault, mint LP shares pro-rata (`shares = amount × supply / total_liquidity`, first deposit 1:1)
-- [ ] Guards: match not `Settled`, amount > 0, checked math everywhere
-- [ ] Events: `PoolCreated`, `PoolDeposited { user, amount, shares }`
-- [ ] Full test matrix from the phase doc (incl. reject deposit on settled match)
-- [ ] Mark phase doc `## Status` done
+- [x] Scaffold `programs/liquidity-pool` in the Anchor workspace (`Anchor.toml`, `Cargo.toml` member)
+- [x] `create_pool(match_id, fee_rate)` — Pool PDA (`["pool", match_id]`), USDC vault PDA (`["vault", match_id]`, authority = pool). Shares tracked via `LpPosition` PDA per the fase-2a spec (SPL LP mint deferred; revisit if composability is needed)
+- [x] `deposit(amount)` — transfer USDC user→vault, LP shares pro-rata (`shares = amount × total_shares / total_liquidity` in u128, first deposit 1:1)
+- [x] Guards: match not `Settled` (create + deposit), min 1 USDC, zero-share reject, checked math everywhere
+- [x] Events: `PoolCreated`, `PoolDeposited { owner, amount, shares, totals }`
+- [x] Full test matrix from the phase doc (incl. reject deposit on settled match) — 11 tests
+- [x] Mark phase doc `## Status` done
 
 ### 2b — Betting ↔ pool integration (`docs/fase-2b-pool-integration.md`)
 - [ ] `place_bet` locks `payout` in the pool (`locked_liquidity += payout`) via CPI or shared-account constraint — decide and document the coupling (CPI vs single program with modules; record the decision in the phase doc)
